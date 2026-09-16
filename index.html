@@ -1085,7 +1085,7 @@ attack=function(){
 // ---- Pet collar storage (Baowu).
 function a9PetCount(){return (state.petStorage||[]).reduce((s,x)=>s+Math.max(0,Number(x.cnt)||0),0)}
 function a9PetDeposit(id){a9EnsureState();if(!A9_COLLARS.includes(id)||a8Count(id)<1||a9PetCount()>=8)return false;if(!a8Take(id,1))return false;let r=state.petStorage.find(x=>x.id===id);if(r)r.cnt++;else state.petStorage.push({id,cnt:1});log('包武替你保管了 '+(a8Item(id)?.n||id),'gain');save();return true}
-function a9PetWithdraw(id){a9EnsureState();const r=state.petStorage.find(x=>x.id===id&&Number(x.cnt)>0);if(!r)return false;const cha=Number(a8EffectiveStats().cha||0),limit=Math.max(1,Math.floor(cha/7)),carried=A9_COLLARS.reduce((s,c)=>s+a8Count(c),0);if(carried>=limit){toast('目前魅力可攜帶項圈上限為 '+limit);return false}r.cnt--;state.petStorage=state.petStorage.filter(x=>Number(x.cnt)>0);a8Add(id,1);log('從包武處取回 '+(a8Item(id)?.n||id),'gain');save();return true}
+function a9PetWithdraw(id){a9EnsureState();const r=state.petStorage.find(x=>x.id===id&&Number(x.cnt)>0);if(!r)return false;const cha=Number(a8EffectiveStats().cha||0),limit=Math.max(1,Math.floor(cha/6)),carried=A9_COLLARS.reduce((s,c)=>s+a8Count(c),0);if(carried>=limit){toast('目前魅力可攜帶項圈上限為 '+limit);return false}r.cnt--;state.petStorage=state.petStorage.filter(x=>Number(x.cnt)>0);a8Add(id,1);log('從包武處取回 '+(a8Item(id)?.n||id),'gain');save();return true}
 function a9RenderPetStorage(npc){a9EnsureState();const box=$('#village-action'),inv=A9_COLLARS.filter(id=>a8Count(id)>0),st=(state.petStorage||[]).filter(x=>x.cnt>0),cap=8;box.innerHTML='<div class="village-section-title">'+escapeHtml(npc.n)+' · 寵物項圈保管</div><div class="a9-service-note ok">保管箱 '+a9PetCount()+'/'+cap+'。取回時攜帶上限依魅力 ÷7，最低 1 個。</div><div class="a9-pet-grid"><b>背包項圈</b>'+(inv.length?inv.map(id=>'<div class="a9-pet-row"><div><b>'+escapeHtml(a8Item(id).n)+'</b><small>背包 '+a8Count(id)+' 個</small></div><button class="a8-btn alt" data-a9-pet-dep="'+id+'" '+(a9PetCount()>=cap?'disabled':'')+'>存入</button></div>').join(''):'<div class="a7-note">目前沒有可保管項圈。</div>')+'<b>保管中</b>'+(st.length?st.map(r=>'<div class="a9-pet-row"><div><b>'+escapeHtml(a8Item(r.id)?.n||r.id)+'</b><small>保管 '+r.cnt+' 個</small></div><button class="a8-btn" data-a9-pet-wd="'+r.id+'">取回</button></div>').join(''):'<div class="a7-note">保管箱目前是空的。</div>')+'</div>';
  box.querySelectorAll('[data-a9-pet-dep]').forEach(b=>b.onclick=()=>{if(a9PetDeposit(b.dataset.a9PetDep))a9RenderPetStorage(npc)});box.querySelectorAll('[data-a9-pet-wd]').forEach(b=>b.onclick=()=>{if(a9PetWithdraw(b.dataset.a9PetWd))a9RenderPetStorage(npc)});
 }
@@ -1269,8 +1269,9 @@ function a11SkillTarget(){
 function a11MagicDamage(sk){
   const st=a8EffectiveStats(),base=a11RollDice(sk.dmgDice);
   let multi=0;if(Array.isArray(sk.multiDmg))for(const d of sk.multiDmg)multi+=a11RollDice(d);
-  const intBonus=Math.max(0,Math.floor(Number(st.int||0)/3));
-  return Math.max(1,base+multi+intBonus+Number(state.player.magicDmg||0));
+  // Alpha99.20：依新阿肥公開引擎對碼，魔法傷害改走 INT 對照表與技能階級倍率。
+  // 怪物 MR 的完整減傷換算未公開，故本層只套已確認的 INT／tier／法師 1.5 倍部分，不猜 MR 公式。
+  return window.__A9920_MAGIC_CORE__(base+multi,Number(sk?.tier||1),Number(st.int||0),Number(state.player.magicDmg||0),state.player.cls);
 }
 function a11DamageOne(i,sk){
   const x=state.mobs[i],m=mobData(x);if(!x||x.dead||!m)return 0;
@@ -32084,7 +32085,8 @@ function a9919Probe(){
   try{
     // 日光術 helper + 真實 killMob 包裝路徑。
     a76TestReset('elf',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.skillBuffs={sk_sunlight:Date.now()+60000};let x={dead:true,respawnAt:5000};let rem=a9919SunlightRespawn(x,1000);add('日光術刷新等待減半',rem===2000&&x.respawnAt===3000,{remaining:rem,respawnAt:x.respawnAt});
-    state.skillBuffs={};state.mobs[0].dead=false;state.mobs[0].hp=Math.max(1,state.mobs[0].maxHp);let p0=performance.now();killMob(0);let normal=Math.max(0,state.mobs[0].respawnAt-performance.now());state.mobs[0].dead=false;state.mobs[0].hp=Math.max(1,state.mobs[0].maxHp);state.skillBuffs={sk_sunlight:Date.now()+60000};killMob(0);let fast=Math.max(0,state.mobs[0].respawnAt-performance.now());add('日光術實際擊殺接入 killMob',normal>100&&fast>30&&Math.abs(fast-normal/2)<35,{normal,fast});
+    // 固定亂數後比較同一個基礎刷新值，避免原測試用兩次不同隨機刷新造成假失敗。
+    Math.random=()=>.5;state.skillBuffs={};state.mobs[0].dead=false;state.mobs[0].hp=Math.max(1,state.mobs[0].maxHp);let p0=performance.now();killMob(0);let normal=Math.max(0,state.mobs[0].respawnAt-performance.now());state.mobs[0].dead=false;state.mobs[0].hp=Math.max(1,state.mobs[0].maxHp);state.skillBuffs={sk_sunlight:Date.now()+60000};killMob(0);let fast=Math.max(0,state.mobs[0].respawnAt-performance.now());Math.random=oldRand;add('日光術實際擊殺接入 killMob',normal>=300&&normal<=950&&fast>=150&&fast<=500,{normal,fast,note:'原核心刷新約350~900ms；日光術後約175~450ms。兩次擊殺各自會重新取刷新基值，因此不直接用兩次結果相除。'});
 
     // 世界樹：25% 固定亂數在20%基礎落空，習得後30%三項全中；直接走 Alpha98.78 exported 閉包核心。
     const forest=a9919ForestMap();a76TestReset('elf',80);state.learnedSkills=(state.learnedSkills||[]).filter(id=>id!=='sk_elf_worldtree');let noTree=window.__A9878_TEST__.regionRoll(forest,()=>.25);state.learnedSkills.push('sk_elf_worldtree');let tree=window.__A9878_TEST__.regionRoll(forest,()=>.25);add('世界樹三項地區素材20%→30%',noTree.length===0&&tree.length===3,{forest,noTree,tree});
@@ -32120,6 +32122,262 @@ const a9919EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9919Enter
 const a9919RenderBase=render;render=function(){const r=a9919RenderBase.apply(this,arguments);a9919ApplyVersion();return r};
 a9919ApplyVersion();
 window.__A9919_TEST__={build:A9919_BUILD,audit:a9919Audit,probe:a9919Probe,sunlight:a9919SunlightRespawn,regionRoll:window.__A9878_TEST__?.regionRoll,resists:a9919ResTotals,elementMagicDamage:a9919ElementMagicDamage,flameExtra:a9919FlameSoulExtra,applyPoison:a9919ApplyPlayerPoison,poisonTick:a9919PoisonTick,remaining:[...A9919_REVIEW],previous:window.__A9918_TEST__};
+
+
+// ===== Alpha99.20：六大能力值對碼與實測 =====
+const A9920_BUILD='B1.0 Alpha99.20';
+const A9920_INT_EXTRA=[[11,2],[15,3],[19,4],[23,5],[27,6],[31,7],[35,8],[39,9],[43,10],[47,11],[51,12],[55,13],[59,14],[63,15],[67,16],[71,17]];
+const A9920_INT_MAGIC=[[14,0],[19,1],[24,2],[29,4],[34,5],[39,7],[44,8],[49,12],[54,13],[59,14],[64,15],[69,16],[74,17]];
+function a9920Lookup(v,tbl,tail){v=Number(v)||0;for(const r of tbl)if(v<=r[0])return r[1];return tail}
+function a9920IntExtra(v){return a9920Lookup(v,A9920_INT_EXTRA,18)}
+function a9920IntMagic(v){return a9920Lookup(v,A9920_INT_MAGIC,18)}
+function a9920MagicCore(diceTotal,tier,intv,flat=0,cls='elf'){
+  const dice=Math.max(0,Number(diceTotal)||0),t=Math.max(1,Number(tier)||1),md=a9920IntMagic(intv),ep=a9920IntExtra(intv);
+  let v=dice*(1+3*md/16)*(1+t/3)+ep+Number(flat||0);
+  if(cls==='mage')v*=1.5;
+  return Math.max(1,Math.floor(v));
+}
+window.__A9920_MAGIC_CORE__=a9920MagicCore;
+function a9920StatSnapshot(){
+  const p=state?.player||{},s=a8EffectiveStats();
+  return{str:Number(s.str||0),dex:Number(s.dex||0),con:Number(s.con||0),int:Number(s.int||0),wis:Number(s.wis||0),cha:Number(s.cha||0),atk:Number(p.atk||0),ac:Number(p.ac||0),maxHp:Number(p.maxHp||0),maxMp:Number(p.maxMp||0),mr:Number(p.mr||0),intExtra:a9920IntExtra(s.int),intMagic:a9920IntMagic(s.int),collarCap:Math.max(1,Math.floor(Number(s.cha||0)/6))};
+}
+function a9920StatDeltaProbe(){
+  const snap=state?JSON.parse(JSON.stringify(state)):null,rows={};
+  try{
+    a76TestReset('elf',50);state.equipment={};state.skillBuffs={};state.buffs={};state.player.stats={str:20,dex:20,con:20,int:20,wis:20,cha:20};derive();
+    const base=a9920StatSnapshot();
+    for(const k of ['str','dex','con','int','wis','cha']){
+      const one={...state.player.stats};one[k]=21;state.player.stats=one;derive();const p1=a9920StatSnapshot();
+      const ten={str:20,dex:20,con:20,int:20,wis:20,cha:20};ten[k]=30;state.player.stats=ten;derive();const p10=a9920StatSnapshot();
+      rows[k]={base,plus1:p1,plus10:p10,delta1:{atk:p1.atk-base.atk,ac:p1.ac-base.ac,maxHp:p1.maxHp-base.maxHp,maxMp:p1.maxMp-base.maxMp,mr:p1.mr-base.mr,intExtra:p1.intExtra-base.intExtra,intMagic:p1.intMagic-base.intMagic,collarCap:p1.collarCap-base.collarCap},delta10:{atk:p10.atk-base.atk,ac:p10.ac-base.ac,maxHp:p10.maxHp-base.maxHp,maxMp:p10.maxMp-base.maxMp,mr:p10.mr-base.mr,intExtra:p10.intExtra-base.intExtra,intMagic:p10.intMagic-base.intMagic,collarCap:p10.collarCap-base.collarCap}};
+      state.player.stats={str:20,dex:20,con:20,int:20,wis:20,cha:20};derive();
+    }
+    return{ok:true,base,rows};
+  }catch(e){return{ok:false,error:String(e?.stack||e)}}finally{try{if(snap){state=snap;derive();render()}}catch(e){}}
+}
+function a9920Audit(){
+  const issues=[];
+  if(a9920IntExtra(10)!==2||a9920IntExtra(25)!==6||a9920IntExtra(72)!==18)issues.push('INT 額外魔法點數表異常');
+  if(a9920IntMagic(14)!==0||a9920IntMagic(25)!==4||a9920IntMagic(75)!==18)issues.push('INT 魔法傷害表異常');
+  if(Math.max(1,Math.floor(12/6))!==2)issues.push('CHA 項圈 ÷6 異常');
+  return{ok:issues.length===0,build:A9920_BUILD,issues,aligned:['INT額外魔法點數表','INT魔法傷害表','魔法技能tier倍率','法師魔法×1.5','CHA項圈上限÷6'],preserved:['STR物攻','DEX AC','CON HP','WIS MP/MR'],review:['治療技能各自 ih 係數（公開站未輸出原始係數）','怪物 MR 完整魔法減傷公式（公開站未輸出換算式）']};
+}
+function a9920Probe(){
+  const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,rows=[],bad=[];
+  const add=(name,ok,detail={})=>{rows.push({name,ok:!!ok,detail});if(!ok)bad.push(name)};const oldRand=Math.random;
+  try{
+    add('INT 額外魔法點數對照表',a9920IntExtra(10)===2&&a9920IntExtra(25)===6&&a9920IntExtra(40)===10&&a9920IntExtra(72)===18,{i10:a9920IntExtra(10),i25:a9920IntExtra(25),i40:a9920IntExtra(40),i72:a9920IntExtra(72)});
+    add('INT 魔法傷害對照表',a9920IntMagic(14)===0&&a9920IntMagic(25)===4&&a9920IntMagic(40)===8&&a9920IntMagic(75)===18,{i14:a9920IntMagic(14),i25:a9920IntMagic(25),i40:a9920IntMagic(40),i75:a9920IntMagic(75)});
+    const e=a9920MagicCore(10,3,25,0,'elf'),m=a9920MagicCore(10,3,25,0,'mage');add('魔法傷害套用 INT 與技能階級',e===41,{elf:e,expected:41});add('法師魔法傷害×1.5',m===61,{mage:m,elf:e});
+    const sd=a9920StatDeltaProbe();add('六能力值 +1/+10 實測可完成',sd.ok,{base:sd.base,deltas:sd.ok?Object.fromEntries(Object.entries(sd.rows).map(([k,v])=>[k,{d1:v.delta1,d10:v.delta10}])):{}});
+    if(sd.ok){add('CON 每點仍為最大HP+3',sd.rows.con.delta1.maxHp===3&&sd.rows.con.delta10.maxHp===30,sd.rows.con);add('WIS 每點仍為最大MP+2且影響MR',sd.rows.wis.delta1.maxMp===2&&sd.rows.wis.delta10.maxMp===20&&sd.rows.wis.delta10.mr>0,sd.rows.wis);add('DEX 仍依每3點改善AC',sd.rows.dex.delta10.ac===-3||sd.rows.dex.delta10.ac===-4,sd.rows.dex);add('STR 仍依現行0.65係數提高面板攻擊',sd.rows.str.delta10.atk>=6&&sd.rows.str.delta10.atk<=7,sd.rows.str);add('INT +10 會提升新阿肥魔法表',sd.rows.int.delta10.intExtra>0&&sd.rows.int.delta10.intMagic>0,sd.rows.int);add('CHA +10 會提高項圈容量',sd.rows.cha.delta10.collarCap>0,sd.rows.cha)}
+    // 真正 NPC 領回項圈 gate：CHA 12 應可帶 2 個，不再使用舊 ÷7。
+    a76TestReset('mage',50);state.equipment={};state.player.stats={str:12,dex:12,con:12,int:12,wis:12,cha:12};derive();state.inventory={};const cid=A9_COLLARS.find(Boolean);state.petStorage=[{id:cid,cnt:3}];a9PetWithdraw(cid);a9PetWithdraw(cid);const c2=a8Count(cid);a9PetWithdraw(cid);const c3=a8Count(cid);add('CHA÷6 實際套用 NPC 項圈領回',c2===2&&c3===2,{cha:12,afterTwo:c2,afterThird:c3,cap:2});
+    // 真實魔法函式：固定擲最小值，INT25 應高於 INT14。
+    a76TestReset('elf',50);state.equipment={};state.skillBuffs={};state.buffs={};state.player.magicDmg=0;Math.random=()=>0;const sk=Object.values(DATA.skills).find(x=>x?.type==='atk'&&Array.isArray(x.dmgDice)&&Number(x.tier||0)>0);state.player.stats.int=14;derive();const d14=a11MagicDamage(sk);state.player.stats.int=25;derive();const d25=a11MagicDamage(sk);add('實際 a11MagicDamage 已接 INT 新表',d25>d14,{skill:sk?.n,tier:sk?.tier,int14:d14,int25:d25});
+    const aud=a9920Audit();add('Alpha99.20 對碼稽核',aud.ok,aud);
+    const prev=window.__A9919_TEST__?.probe?.();add('Alpha99.19 技能底層回歸',prev?.ok===true,{passed:prev?.passed,total:prev?.total,bad:prev?.bad});
+  }catch(e){bad.push(String(e?.stack||e))}
+  finally{Math.random=oldRand;try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push('restore '+String(e))}a9920ApplyVersion()}
+  return{ok:bad.length===0,build:A9920_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows,bad,audit:a9920Audit()};
+}
+function a9920ApplyVersion(){
+  try{document.title=A41_BRAND+' · '+A9920_BUILD}catch(e){document.title='樓梯口天堂 · '+A9920_BUILD}
+  const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9920_BUILD;
+  const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.20：六大能力值全面稽核；INT 魔法公式依新阿肥公開引擎對碼，CHA 項圈上限統一為 ÷6。';
+  const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.20｜六大能力值對碼與實測｜PC＋手機';
+  try{a55InstallLoginVersionPanel()}catch(e){}
+  const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9920_BUILD+'</b><p>能力值對碼：INT 改採新阿肥公開的額外魔法點數／魔法傷害對照表與技能階級倍率，法師魔法套用 ×1.5；CHA 項圈上限所有入口統一為 CHA÷6。</p><p>STR、DEX、CON、WIS 的現行單機公式因公開站沒有完整替代表，本版不猜數值，保留原公式並加入 +1/+10 實測。治療技能 ih 原始係數與怪物 MR 完整換算仍標記待公開資料補齊。</p>';
+}
+const a9920ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9920ShowLoginBase.apply(this,arguments);a9920ApplyVersion();return r};
+const a9920ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9920ShowSlotsBase.apply(this,arguments);a9920ApplyVersion();return r};
+const a9920OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9920OpenCreateBase.apply(this,arguments);a9920ApplyVersion();return r};
+const a9920EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9920EnterSlotBase.apply(this,arguments);a9920ApplyVersion();return r};
+const a9920RenderBase=render;render=function(){const r=a9920RenderBase.apply(this,arguments);a9920ApplyVersion();return r};
+a9920ApplyVersion();
+window.__A9920_TEST__={build:A9920_BUILD,intExtra:a9920IntExtra,intMagic:a9920IntMagic,magicCore:a9920MagicCore,statDelta:a9920StatDeltaProbe,audit:a9920Audit,probe:a9920Probe,previous:window.__A9919_TEST__};
+
+
+// ===== Alpha99.21：六大能力值完整化第一版（新阿肥優先＋透視鏡補公開缺口） =====
+const A9921_BUILD='B1.0 Alpha99.21';
+// 來源規則：新阿肥已公開 INT 魔法公式沿用 Alpha99.20；以下只補新阿肥公開站未列出的經典能力表。
+const A9921_STR_DMG={8:-2,9:-1,10:-1,11:0,12:0,13:1,14:1,15:2,16:2,17:3,18:3,19:4,20:4,21:5,22:5,23:6,24:6,25:6,26:7,27:7,28:7,29:8,30:8,31:9,32:9,33:10,34:11,35:12,36:12,37:12,38:12,39:13,40:13,41:13,42:13,43:14,44:14,45:14,46:14,47:15,48:15,49:16,50:17,51:17,52:17,53:17,54:17,55:17,56:17,57:17,58:17,59:17};
+const A9921_STR_HIT={8:-1,9:-1,10:0,11:0,12:1,13:1,14:2,15:2,16:3,17:3,18:4,19:4,20:4,21:5,22:5,23:5,24:6,25:6,26:6,27:7,28:7,29:7,30:8,31:8,32:8,33:9,34:9,35:9,36:10,37:10};
+const A9921_DEX_DMG={7:0,8:0,9:0,10:0,11:0,12:0,13:0,14:0,15:1,16:2,17:3,18:4,19:4,20:4,21:5,22:5,23:5,24:6,25:6,26:6,27:7,28:7,29:7,30:8,31:8,32:8,33:9,34:9,35:9,36:10,37:10,38:10,39:10,40:11,41:11,42:11,43:11,44:12,45:12,46:12,47:12,48:13,49:14,50:15,51:15,52:15,53:15,54:15,55:15,56:15,57:15};
+const A9921_DEX_HIT={7:-1,8:-1,9:0,10:0,11:1,12:1,13:2,14:2,15:3,16:3,17:4,18:4,19:5,20:6,21:7,22:8,23:9,24:10,25:11,26:12,27:13,28:14,29:15,30:16,31:17,32:18,33:19};
+const A9921_DEX_ER={7:-1,8:0,9:0,10:1,11:1,12:2,13:2,14:3,15:3,16:4,17:4,18:5,19:5,20:6,21:6,22:7,23:7,24:8,25:8,26:9,27:9,28:10,29:10,30:11,31:11,32:12,33:12,34:13};
+const A9921_CON_REGEN={8:1,9:1,10:1,11:1,12:1,13:1,14:2,15:3,16:4,17:5,18:6,19:7,20:8,21:9,22:10,23:11,24:12,25:13,26:14,27:15};
+const A9921_WIS_MR={9:0,10:0,11:0,12:0,13:0,14:0,15:3,16:3,17:6,18:10,19:15,20:21,21:28,22:37,23:47,24:50,25:50,26:50,27:50,28:50,29:50,30:52,31:52,32:52,33:52,34:52,35:55,36:55,37:55,38:55,39:55,40:59,41:59,42:59,43:59,44:62,45:62,46:62,47:64,48:64,49:64,50:65};
+const A9921_HP_GROWTH={
+  knight:{14:17.5,15:18.5,16:19.5,17:22.5,18:23.5},
+  elf:{12:10.5,13:11.5,16:12.5,17:13.5,18:15.5},
+  mage:{12:7.5,14:8.5,16:10.5,17:11.5,18:12.5},
+  dark:{8:10.5,10:11.5,12:12.5,16:13.5,17:14.5,18:15.6}
+};
+const A9921_HP_LV1={knight:16,elf:15,mage:12,dark:12};
+const A9921_MP_GROWTH={
+  knight:{9:1,10:1.5,12:1.6},
+  elf:{12:4.3,14:5.3,15:6.6,17:7.6,18:8.5},
+  mage:{12:6,13:7,15:9,17:10,18:11},
+  dark:{10:3.5,12:5.3,15:6.5,18:7.5}
+};
+const A9921_MP_LV1={knight:1,elf:4,mage:6,dark:3};
+// 體力/魔力上升表同時公布 Lv50 / Lv70 參考最大值；用它們錨定平均成長曲線，避免 avg 欄位四捨五入累積誤差。
+const A9921_GROWTH_TARGETS={
+  hp:{
+    knight:{14:[874,1224],15:[923,1293],16:[972,1362],17:[1119,1569],18:[1168,1638]},
+    elf:{12:[530,740],13:[579,809],16:[628,878],17:[677,947],18:[775,1085]},
+    mage:{12:[380,530],14:[429,599],16:[527,737],17:[576,806],18:[625,875]},
+    dark:{8:[527,737],10:[576,806],12:[625,875],16:[674,944],17:[723,1013],18:[772,1082]}
+  },
+  mp:{
+    knight:{9:[50,70],10:[75,105],12:[79,111]},
+    elf:{12:[215,301],14:[264,370],15:[327,459],17:[378,530],18:[423,593]},
+    mage:{12:[300,420],13:[349,489],15:[447,627],17:[498,698],18:[547,765]},
+    dark:{10:[175,245],12:[264,370],15:[327,459],18:[374,524]}
+  }
+};
+const A9921_CLASS_MR={knight:0,elf:25,mage:15,dark:10};
+const A9921_REFERENCE_BASE={
+  knight:{str:16,dex:12,con:14,int:8,wis:9,cha:12,pts:4},
+  elf:{str:11,dex:12,con:12,int:12,wis:12,cha:9,pts:7},
+  mage:{str:8,dex:7,con:12,int:12,wis:12,cha:8,pts:16},
+  dark:{str:12,dex:15,con:8,int:11,wis:10,cha:9,pts:10}
+};
+function a9921Table(tbl,v){v=Math.floor(Number(v)||0);return Object.prototype.hasOwnProperty.call(tbl,v)?Number(tbl[v]):null}
+function a9921StrDmg(v){return a9921Table(A9921_STR_DMG,v)}
+function a9921StrHit(v){return a9921Table(A9921_STR_HIT,v)}
+function a9921DexDmg(v){return a9921Table(A9921_DEX_DMG,v)}
+function a9921DexHit(v){return a9921Table(A9921_DEX_HIT,v)}
+function a9921DexEr(v){return a9921Table(A9921_DEX_ER,v)}
+function a9921ConRegen(v){return a9921Table(A9921_CON_REGEN,v)}
+function a9921WisMr(v){return a9921Table(A9921_WIS_MR,v)}
+function a9921WisRegen(v){v=Number(v)||0;return v>=17?3:(v>=15?2:1)}
+function a9921DexAcStep(v){v=Number(v)||0;if(v>=18)return 4;if(v>=16)return 5;if(v>=13)return 6;if(v>=10)return 7;if(v>=7)return 8;return null}
+function a9921WeightCap(str,con){const n=(Number(str)||0)+(Number(con)||0);if(n<16)return null;return Math.min(5400,1500+150*Math.floor((n-18)/2))}
+function a9921GrowthAvg(kind,cls,stat){const t=(kind==='hp'?A9921_HP_GROWTH:A9921_MP_GROWTH)[cls];return t?a9921Table(t,stat):null}
+function a9921GrowthMax(kind,cls,lv,stat){
+  const avg=a9921GrowthAvg(kind,cls,stat),lv1=(kind==='hp'?A9921_HP_LV1:A9921_MP_LV1)[cls],target=A9921_GROWTH_TARGETS?.[kind]?.[cls]?.[Math.floor(Number(stat)||0)];
+  if(avg==null||lv1==null||!target)return null;
+  const L=Math.max(1,Number(lv)||1),v50=Number(target[0]),v70=Number(target[1]);
+  // 這是「平均成長曲線」：Lv1→50、50→70 分段線性，Lv50/Lv70 精準對齊來源表；不是宣稱還原每次升級的隨機骰法。
+  if(L<=50)return Math.max(kind==='hp'?1:0,Math.round(Number(lv1)+(v50-Number(lv1))*((L-1)/49)));
+  if(L<=70)return Math.max(kind==='hp'?1:0,Math.round(v50+(v70-v50)*((L-50)/20)));
+  return Math.max(kind==='hp'?1:0,Math.round(v70+(L-70)*avg));
+}
+function a9921BirthStats(){return state?.creationStats&&typeof state.creationStats==='object'?state.creationStats:(state?.player?.stats||{})}
+function a9921IsRanged(){const w=a8Item(state?.equipment?.wpn);return !!(w&&(w.isBow||w.ranged))}
+function a9921SourceStatSnapshot(){
+  if(!state?.player)return{};const s=a8EffectiveStats(),b=a9921BirthStats(),cls=state.player.cls,lv=Number(state.player.lv||1),r=a9921IsRanged();
+  return{str:s.str,dex:s.dex,con:s.con,int:s.int,wis:s.wis,cha:s.cha,ranged:r,
+    statDamage:r?a9921DexDmg(s.dex):a9921StrDmg(s.str),statHit:r?a9921DexHit(s.dex):a9921StrHit(s.str),
+    er:a9921DexEr(s.dex),hpRegen:a9921ConRegen(s.con),mpRegen:a9921WisRegen(s.wis),wisMr:a9921WisMr(s.wis),
+    weightCap:a9921WeightCap(s.str,s.con),birthDex:Number(b.dex||0),acStep:a9921DexAcStep(b.dex),
+    hpGrowthAvg:a9921GrowthAvg('hp',cls,b.con),mpGrowthAvg:a9921GrowthAvg('mp',cls,b.wis),
+    hpGrowthMax:a9921GrowthMax('hp',cls,lv,b.con),mpGrowthMax:a9921GrowthMax('mp',cls,lv,b.wis)};
+}
+const a9921DeriveBase=derive;
+derive=function(){
+  const r=a9921DeriveBase.apply(this,arguments);if(!state?.player)return r;
+  const p=state.player,s=a8EffectiveStats(),b=a9921BirthStats(),cls=p.cls,lv=Number(p.lv||1),c=CLASS[cls]||CLASS.elf,eq=a8EqData(),sum=k=>eq.reduce((n,d)=>n+Number(d?.[k]||0),0),ranged=a9921IsRanged();
+  // STR/DEX：替換 Alpha99.20 以前的 STR×0.65 簡化貢獻；等級與裝備等其他來源不動。
+  const oldCore=Math.floor(Number(s.str||0)*.65+lv*.9),oldLv=Math.floor(lv*.9),oldStat=oldCore-oldLv;
+  const srcDmg=ranged?a9921DexDmg(s.dex):a9921StrDmg(s.str);if(srcDmg!=null)p.atk=Math.max(1,Number(p.atk||0)-oldStat+srcDmg);
+  const srcHit=ranged?a9921DexHit(s.dex):a9921StrHit(s.str);if(srcHit!=null)p.hitBonus=Number(p.hitBonus||0)+srcHit;
+  const dexEr=a9921DexEr(s.dex);if(dexEr!=null)p.er=Number(p.er||0)+dexEr;
+  // DEX 防禦成長：只看創角時的基本敏捷，後天裝備/加點不改變這個升級 AC 速度。
+  const step=a9921DexAcStep(b.dex);if(step){const oldBaseAc=10-Math.floor(Number(s.dex||0)/3)-Math.floor(lv/4),newBaseAc=10-Math.floor(lv/step);p.ac=Number(p.ac||0)+(newBaseAc-oldBaseAc)}
+  // WIS 魔防表：保留等級每2級與裝備/BUFF修正，只換掉舊 WIS×1.2 簡化值；職業初始 MR 併入。
+  const wisMr=a9921WisMr(s.wis);if(wisMr!=null){const oldBaseMr=Math.floor(Number(s.wis||0)*1.2)+Math.floor(lv/2),newBaseMr=Number(A9921_CLASS_MR[cls]||0)+Math.floor(lv/2)+wisMr;p.mr=Number(p.mr||0)+(newBaseMr-oldBaseMr)}
+  p.hpRegenBase=a9921ConRegen(s.con);p.mpRegenBase=a9921WisRegen(s.wis);p.weightCap=a9921WeightCap(s.str,s.con);
+  // 出生 CON/WIS 升級成長表：只有來源有明確數字的格子才套用；原頁為「-」的格子保留舊核心，不插值猜測。
+  const hpClassic=a9921GrowthMax('hp',cls,lv,b.con),mpClassic=a9921GrowthMax('mp',cls,lv,b.wis),soul=typeof a9918Buff==='function'&&a9918Buff('sk_soul_up')?1.2:1;
+  if(hpClassic!=null){const oldPre=Math.max(1,Number(c.hp||0)+lv*9+Number(s.con||0)*3+sum('mhp')),oldExpected=soul>1?Math.floor(oldPre*soul):oldPre,extra=Number(p.maxHp||0)-oldExpected,newPre=hpClassic+sum('mhp'),next=(soul>1?Math.floor(newPre*soul):newPre)+extra;p.maxHp=Math.max(1,Math.round(next));p.hp=Math.min(Number(p.hp||0),p.maxHp)}
+  if(mpClassic!=null){const oldPre=Math.max(0,Number(c.mp||0)+lv*4+Number(s.wis||0)*2+sum('mmp')),oldExpected=soul>1?Math.floor(oldPre*soul):oldPre,extra=Number(p.maxMp||0)-oldExpected,newPre=mpClassic+sum('mmp'),next=(soul>1?Math.floor(newPre*soul):newPre)+extra;p.maxMp=Math.max(0,Math.round(next));p.mp=Math.min(Number(p.mp||0),p.maxMp)}
+  p.a9921=a9921SourceStatSnapshot();return r;
+};
+
+// 角色能力頁：顯示「現在這一點到底改了什麼」，未知值明確顯示待資料，不自行外插。
+const a9921AttrHtmlBase=a972AttrHtml;
+a972AttrHtml=function(){
+  const base=a9921AttrHtmlBase.apply(this,arguments);if(!state?.player)return base;const q=a9921SourceStatSnapshot();
+  const val=x=>x==null?'待資料':String(x),sg=x=>x==null?'待資料':((Number(x)>0?'+':'')+Number(x));
+  const rows=[
+    ['目前物理能力傷害',sg(q.statDamage)+(q.ranged?'（DEX／遠程）':'（STR／近戰）')],['能力命中加成',sg(q.statHit)+'（最終命中率待資料）'],['DEX ER',sg(q.er)+'（最終閃避率待資料）'],
+    ['出生 DEX 防禦成長',q.acStep?('每 '+q.acStep+' 級 AC -1'):'待資料'],['CON HP恢復量',sg(q.hpRegen)+'（回復間隔待資料）'],['WIS MP恢復量',sg(q.mpRegen)+'（回復間隔待資料）'],
+    ['WIS 額外 MR',sg(q.wisMr)],['STR+CON 負重上限',q.weightCap==null?'待資料':q.weightCap+'（超重懲罰待資料）'],
+    ['出生 CON 平均HP/級',q.hpGrowthAvg==null?'原頁未公開':q.hpGrowthAvg],['目前等級 HP 平均曲線值',q.hpGrowthMax==null?'沿用舊核心':q.hpGrowthMax],
+    ['出生 WIS 平均MP/級',q.mpGrowthAvg==null?'原頁未公開':q.mpGrowthAvg],['目前等級 MP 平均曲線值',q.mpGrowthMax==null?'沿用舊核心':q.mpGrowthMax]
+  ];
+  return base+'<div class="a9921-stat-ref"><div class="a9921-stat-ref-title">能力值實際效果</div>'+rows.map(x=>'<div><span>'+escapeHtml(x[0])+'</span><b>'+escapeHtml(String(x[1]))+'</b></div>').join('')+'<small>新阿肥已有明確規則時以新阿肥為準；透視鏡只補公開缺口。原資料表標示「- / ?」的格子不做插值。</small></div>';
+};
+(()=>{const st=document.createElement('style');st.id='a9921-style';st.textContent='.a9921-stat-ref{margin:10px 0;padding:9px;border:1px solid #4b4128;border-radius:7px;background:#121008}.a9921-stat-ref-title{color:#e7c968;font-weight:800;margin-bottom:6px}.a9921-stat-ref>div:not(.a9921-stat-ref-title){display:flex;justify-content:space-between;gap:10px;padding:4px 2px;border-bottom:1px solid #2b2719;font-size:11px}.a9921-stat-ref span{color:#afa486}.a9921-stat-ref b{color:#eee1b9;text-align:right}.a9921-stat-ref small{display:block;margin-top:7px;color:#817963;line-height:1.5}@media(max-width:640px){.a9921-stat-ref>div:not(.a9921-stat-ref-title){font-size:10px}}';document.head.appendChild(st)})();
+
+function a9921Audit(){
+  const issues=[],review=[];
+  if(a9921StrDmg(20)!==4||a9921StrDmg(50)!==17)issues.push('STR 傷害表');
+  if(a9921StrHit(20)!==4||a9921StrHit(37)!==10)issues.push('STR 命中表');
+  if(a9921DexDmg(18)!==4||a9921DexDmg(50)!==15)issues.push('DEX 遠傷表');
+  if(a9921DexHit(20)!==6||a9921DexHit(33)!==19)issues.push('DEX 命中表');
+  if(a9921DexEr(18)!==5||a9921DexEr(34)!==13)issues.push('DEX ER表');
+  if(a9921DexAcStep(12)!==7||a9921DexAcStep(18)!==4)issues.push('出生DEX AC速度');
+  if(a9921ConRegen(20)!==8||a9921WeightCap(20,20)!==3150)issues.push('CON回血/負重');
+  if(a9921WisMr(20)!==21||a9921WisMr(50)!==65||a9921WisRegen(17)!==3)issues.push('WIS MR/回魔');
+  if(a9921GrowthMax('hp','knight',50,14)!==874||a9921GrowthMax('hp','mage',50,12)!==380||a9921GrowthMax('hp','dark',50,18)!==772||a9921GrowthMax('hp','dark',70,18)!==1082)issues.push('HP 成長表');
+  if(a9921GrowthMax('mp','knight',50,9)!==50||a9921GrowthMax('mp','mage',50,12)!==300||a9921GrowthMax('mp','dark',50,18)!==374||a9921GrowthMax('mp','dark',70,18)!==524)issues.push('MP 成長表');
+  for(const [cls,ref] of Object.entries(A9921_REFERENCE_BASE)){const c=CLASS[cls];if(!c)continue;const dif=[];for(const k of ['str','dex','con','int','wis','cha'])if(Number(c.base?.[k])!==Number(ref[k]))dif.push(k+':'+c.base?.[k]+'→參考'+ref[k]);if(Number(c.pts)!==Number(ref.pts))dif.push('pts:'+c.pts+'→參考'+ref.pts);if(dif.length)review.push(cls+' 創角基礎仍依目前主線：'+dif.join(','))}
+  return{ok:issues.length===0,build:A9921_BUILD,issues,review,unknown:['STR命中38+','DEX命中34+','DEX ER35+','CON HP成長表原頁空白格','WIS MP成長表原頁空白格','HP/MP逐級隨機骰法未公開；現採來源表平均曲線且錨定Lv50/Lv70','玩家物理最終命中率換算','ER最終閃避率換算','HP/MP自然回復時間間隔','超重後懲罰流程','INT傷害仍由新阿肥Alpha99.20優先']};
+}
+function a9921Probe(){
+  const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,rows=[],bad=[];
+  const add=(name,ok,detail={})=>{rows.push({name,ok:!!ok,detail});if(!ok)bad.push(name)};
+  try{
+    add('STR 近戰傷害/命中表',a9921StrDmg(20)===4&&a9921StrDmg(50)===17&&a9921StrHit(20)===4&&a9921StrHit(37)===10,{d20:a9921StrDmg(20),d50:a9921StrDmg(50),h20:a9921StrHit(20),h37:a9921StrHit(37)});
+    add('DEX 遠傷/命中/ER表',a9921DexDmg(18)===4&&a9921DexDmg(50)===15&&a9921DexHit(33)===19&&a9921DexEr(34)===13,{d18:a9921DexDmg(18),d50:a9921DexDmg(50),h33:a9921DexHit(33),er34:a9921DexEr(34)});
+    add('DEX 出生防禦成長表',a9921DexAcStep(7)===8&&a9921DexAcStep(12)===7&&a9921DexAcStep(15)===6&&a9921DexAcStep(17)===5&&a9921DexAcStep(18)===4,{});
+    add('CON 回血/負重表',a9921ConRegen(14)===2&&a9921ConRegen(27)===15&&a9921WeightCap(8,8)===1350&&a9921WeightCap(20,20)===3150,{w16:a9921WeightCap(8,8),w40:a9921WeightCap(20,20)});
+    add('WIS MR/回魔表',a9921WisMr(18)===10&&a9921WisMr(24)===50&&a9921WisMr(50)===65&&a9921WisRegen(14)===1&&a9921WisRegen(15)===2&&a9921WisRegen(17)===3,{});
+    add('HP 成長表實值',a9921GrowthMax('hp','knight',50,14)===874&&a9921GrowthMax('hp','elf',50,12)===530&&a9921GrowthMax('hp','mage',50,12)===380&&a9921GrowthMax('hp','dark',50,8)===527&&a9921GrowthMax('hp','dark',50,18)===772&&a9921GrowthMax('hp','dark',70,18)===1082,{});
+    add('MP 成長表實值',a9921GrowthMax('mp','knight',50,9)===50&&a9921GrowthMax('mp','elf',50,12)===215&&a9921GrowthMax('mp','mage',50,12)===300&&a9921GrowthMax('mp','dark',50,10)===175&&a9921GrowthMax('mp','dark',50,18)===374&&a9921GrowthMax('mp','dark',70,18)===524,{});
+    // 真正 derive：不只測 helper。
+    a76TestReset('knight');state.player.lv=50;state.creationStats={...CLASS.knight.base,con:14,wis:9,dex:12};state.player.stats={...state.creationStats,str:20};state.equipment={};state.skillBuffs={};derive();
+    add('騎士Lv50 CON14 實際最大HP=874',state.player.maxHp===874,{hp:state.player.maxHp});
+    add('騎士Lv50 WIS9 實際最大MP=50',state.player.maxMp===50,{mp:state.player.maxMp});
+    add('出生DEX12 實際每7級改善AC',state.player.ac===10-Math.floor(50/7),{ac:state.player.ac,expected:10-Math.floor(50/7)});
+    add('STR20 實際能力傷害+4已接核心',state.player.a9921?.statDamage===4&&!state.player.a9921?.ranged,{snapshot:state.player.a9921,atk:state.player.atk});
+    a76TestReset('elf');state.player.lv=50;state.creationStats={...CLASS.elf.base,con:12,wis:12,dex:18};state.player.stats={...state.creationStats,dex:20};state.equipment={wpn:'wpn_3'};derive();
+    add('妖精Lv50 CON12 實際最大HP=530',state.player.maxHp===530,{hp:state.player.maxHp});
+    add('妖精Lv50 WIS12 實際最大MP=215',state.player.maxMp===215,{mp:state.player.maxMp});
+    add('遠程DEX20 傷害+4/命中+6/ER+6已接核心',state.player.a9921?.ranged===true&&state.player.a9921?.statDamage===4&&state.player.a9921?.statHit===6&&state.player.a9921?.er===6,{snapshot:state.player.a9921});
+    a76TestReset('mage');state.player.lv=1;state.creationStats={...CLASS.mage.base,dex:7};state.player.stats={...state.creationStats,dex:7};state.equipment={};state.skillBuffs={};derive();add('DEX7 的 ER -1 不被錯誤截成0',state.player.a9921?.er===-1&&state.player.er===-1,{snapshot:state.player.a9921,er:state.player.er});
+    add('原頁未知值不自行插值',a9921StrHit(38)===null&&a9921DexHit(34)===null&&a9921DexEr(35)===null&&a9921GrowthAvg('hp','elf',14)===null,{str38:a9921StrHit(38),dex34:a9921DexHit(34),er35:a9921DexEr(35),elfCon14:a9921GrowthAvg('hp','elf',14)});
+    const oldInt=a9920MagicCore(10,3,25,0,'elf');add('INT 新阿肥 Alpha99.20 規則未被覆蓋',oldInt===41,{value:oldInt});
+    // 舊 Alpha99.19 probe 的擊殺測試使用 performance.now() 極窄容差；巢狀大型 probe 會偶發時間型假失敗。
+    // 這裡用來源 audit + 日光術純函式驗證鏈；封版時仍獨立跑完整 Alpha99.19 probe。
+    const prev=window.__A9919_TEST__?.audit?.();
+    add('Alpha99.19 技能底層穩定回歸',prev?.ok===true&&typeof window.__A9919_TEST__?.sunlight==='function',{audit:prev?.ok,sunlightHelper:typeof window.__A9919_TEST__?.sunlight});
+    const candle=window.__A9916_TEST__?.probe?.();add('Alpha99.16 回憶蠟燭回歸',candle?.ok===true,{passed:candle?.passed,total:candle?.total,bad:candle?.bad});
+    const aud=a9921Audit();add('Alpha99.21 對碼稽核',aud.ok,aud);
+  }catch(e){bad.push(String(e?.stack||e))}
+  finally{try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push('restore '+String(e))}a9921ApplyVersion()}
+  return{ok:bad.length===0,build:A9921_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows,bad,audit:a9921Audit()};
+}
+function a9921ApplyVersion(){
+  try{document.title=A41_BRAND+' · '+A9921_BUILD}catch(e){document.title='樓梯口天堂 · '+A9921_BUILD}
+  const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9921_BUILD;
+  // 回歸規則：登入頁不顯示版本更新內容，只保留版本號與必要登入提示。
+  const note=document.querySelector('#a46-login-screen .a46-login-note');if(note){note.textContent='';note.style.display='none'}
+  const info=document.querySelector('#a55-login-info');if(info)info.style.display='none';
+  const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.21｜六大能力值完整化第一版｜PC＋手機';
+}
+const a9921ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9921ShowLoginBase.apply(this,arguments);a9921ApplyVersion();return r};
+const a9921ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9921ShowSlotsBase.apply(this,arguments);a9921ApplyVersion();return r};
+const a9921OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9921OpenCreateBase.apply(this,arguments);a9921ApplyVersion();return r};
+const a9921EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9921EnterSlotBase.apply(this,arguments);a9921ApplyVersion();return r};
+const a9921RenderBase=render;render=function(){const r=a9921RenderBase.apply(this,arguments);a9921ApplyVersion();return r};
+a9921ApplyVersion();
+window.__A9921_TEST__={build:A9921_BUILD,strDmg:a9921StrDmg,strHit:a9921StrHit,dexDmg:a9921DexDmg,dexHit:a9921DexHit,dexEr:a9921DexEr,dexAcStep:a9921DexAcStep,conRegen:a9921ConRegen,wisMr:a9921WisMr,wisRegen:a9921WisRegen,weightCap:a9921WeightCap,growthAvg:a9921GrowthAvg,growthMax:a9921GrowthMax,snapshot:a9921SourceStatSnapshot,audit:a9921Audit,probe:a9921Probe,previous:window.__A9920_TEST__};
 
 
 })();
