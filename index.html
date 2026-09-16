@@ -29555,9 +29555,9 @@ a9887ApplyVersion();
 window.__A9887_TEST__={build:A9887_BUILD,audit:a9887Audit,clickAudit:a9887ClickAudit,fullRegression:a9887FullRegression,linkedMessage:a9887LinkedMessage,nameIndex:a9887NameIndex,previous:window.__A9884_TEST__};
 
 // ===== Alpha98.88：BOSS 回血測試總開關 =====
-// 測試期間設為 false：所有走世界王 healPer5s / a43BossHeal 的 BOSS 都不會回血。
-// 正式版要恢復時只需把這一行改成 true；DATA.worldBosses 內原始回血數值完全保留。
-const A9888_BOSS_REGEN_ENABLED=false;
+// Alpha99.7 正式封版回歸：恢復所有走世界王 healPer5s / a43BossHeal 的 BOSS 定時回血。
+// DATA.worldBosses 內原始回血數值從未刪除或歸零，本次只把總開關恢復為 true。
+const A9888_BOSS_REGEN_ENABLED=true;
 const A9888_BUILD='B1.0 Alpha98.88';
 const _a9888BossHealBase=a43BossHeal;
 a43BossHeal=function(){
@@ -29581,9 +29581,9 @@ a43BossDrawer=function(){
 
 function a9888ApplyVersion(){
   const note=document.querySelector('#a46-login-screen .a46-login-note');
-  if(note)note.textContent='Alpha98.88：測試模式暫停全部 BOSS 定時回血；原始回血數值保留，正式版可一鍵恢復。';
+  if(note)note.textContent='Alpha98.88 回血模組：BOSS 原始定時回血已於 Alpha99.7 正式封版回歸恢復。';
   const sub=document.querySelector('#create-screen .create-sub');
-  if(sub)sub.textContent='全面重製核心 Alpha98.88｜BOSS回血測試暫停｜戰鬥日誌怪物掉落連結｜原材料直製｜PC＋手機';
+  if(sub)sub.textContent='全面重製核心｜BOSS原始回血資料保留並於 Alpha99.7 恢復｜PC＋手機';
 }
 const _a9888RenderBase=render;
 render=function(){const r=_a9888RenderBase.apply(this,arguments);a9888ApplyVersion();return r};
@@ -29593,7 +29593,7 @@ a9888ApplyVersion();
 
 function a9888Audit(){
   const issues=[];
-  if(A9888_BOSS_REGEN_ENABLED!==false)issues.push('測試版 BOSS 回血總開關不是 false');
+  if(A9888_BOSS_REGEN_ENABLED!==true)issues.push('正式封版 BOSS 回血總開關不是 true');
   const healEntries=Object.entries(DATA.worldBosses||{}).filter(([id,c])=>Number(c?.healPer5s||0)>0);
   if(!healEntries.length)issues.push('找不到任何具有 healPer5s 的 BOSS，無法驗證');
   let sample=null;
@@ -29605,11 +29605,11 @@ function a9888Audit(){
       const max=a43BossMaxHp(c),heal=Math.max(1,Number(c.healPer5s||1));
       state.boss.hp=Math.max(1,max-heal);const before=state.boss.hp,got=a43BossHeal(),after=state.boss.hp;
       sample={id,name:a43BossName(id),healPer5s:Number(c.healPer5s||0),before,after,got};
-      if(got!==0||after!==before)issues.push('關閉總開關後 BOSS 仍然回血');
+      if(got<=0||after<=before)issues.push('恢復總開關後 BOSS 沒有正常回血');
     }finally{state.boss=old}
   }
   let ui='';try{ui=a43BossDrawer()}catch(e){issues.push('世界王 UI 渲染失敗：'+String(e))}
-  if(A9888_BOSS_REGEN_ENABLED===false&&ui&&!ui.includes('回血：測試暫停'))issues.push('世界王 UI 沒有顯示回血測試暫停');
+  if(A9888_BOSS_REGEN_ENABLED===true&&ui&&ui.includes('回血：測試暫停'))issues.push('世界王 UI 仍顯示回血測試暫停');
   const dataKept=healEntries.every(([id,c])=>Number(c.healPer5s||0)>0);
   if(!dataKept)issues.push('原始 healPer5s 資料遭修改');
   return{ok:issues.length===0,build:A9888_BUILD,regenEnabled:A9888_BOSS_REGEN_ENABLED,healBossCount:healEntries.length,dataKept,sample,issues};
@@ -29672,7 +29672,7 @@ const A9900_BUILD='B1.0 Alpha99.0';
       const v=document.querySelector('#a46-login-screen .a46-version');if(v&&v.textContent.trim()!==A9900_BUILD)issues.push('登入版本號不同步');
       if(!window.__A9884_TEST__?.audit?.().ok)issues.push('Alpha98.84 原材料直製巡檢失敗');
       if(!window.__A9887_TEST__?.audit?.().ok)issues.push('Alpha98.87 戰鬥日誌怪物連結巡檢失敗');
-      const regen=typeof window.__A9888_TEST__?.regenEnabled==='function'?window.__A9888_TEST__.regenEnabled():window.__A9888_TEST__?.regenEnabled;if(regen!==false)issues.push('BOSS 回血測試開關不是關閉狀態');
+      const regen=typeof window.__A9888_TEST__?.regenEnabled==='function'?window.__A9888_TEST__.regenEnabled():window.__A9888_TEST__?.regenEnabled;if(regen!==true)issues.push('BOSS 回血正式開關不是開啟狀態');
     }catch(e){issues.push('Alpha99.0 巡檢例外：'+String(e?.stack||e))}
     return{ok:issues.length===0,build:A9900_BUILD,issues,tradeRemoved:!document.querySelector('[data-drawer="trade"]'),desktopNav:[...document.querySelectorAll('#right .navgrid>.navbtn')].map(x=>x.dataset.drawer),mobileNav:[...document.querySelectorAll('#mobile-nav>.mnav')].map(x=>x.dataset.drawer),bossRegenEnabled:(typeof window.__A9888_TEST__?.regenEnabled==='function'?window.__A9888_TEST__.regenEnabled():window.__A9888_TEST__?.regenEnabled)};
   }
@@ -29820,7 +29820,7 @@ const A9901_BUILD='B1.0 Alpha99.1';
       A972_CHAR_TAB='attr';const html=a972CharacterHtml('attr');add('能力頁有點數與六個加點鍵',html.includes('可分配能力點')&&(html.match(/data-a9901-stat=/g)||[]).length===6,{buttons:(html.match(/data-a9901-stat=/g)||[]).length});
       allocate('dex');const rt=JSON.parse(JSON.stringify(state));add('配點追蹤可存檔',Number(rt.a9885?.alloc?.dex||0)===1&&Number(rt.player?.stats?.dex||0)===keep+1,{alloc:rt.a9885?.alloc,dex:rt.player?.stats?.dex});
       const baseAudit=window.__A9900_TEST__?.audit?.();add('Alpha99.0 基線功能仍通過',baseAudit?.ok===true,{issues:baseAudit?.issues||[]});
-      const regen=typeof window.__A9888_TEST__?.regenEnabled==='function'?window.__A9888_TEST__.regenEnabled():null;add('BOSS 回血測試仍暫停',regen===false,{regen});
+      const regen=typeof window.__A9888_TEST__?.regenEnabled==='function'?window.__A9888_TEST__.regenEnabled():null;add('BOSS 回血正式恢復',regen===true,{regen});
     }catch(e){bad.push({name:'probe exception',detail:String(e?.stack||e)})}
     finally{
       try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push({name:'restore',detail:String(e?.stack||e)})}
@@ -29834,6 +29834,1094 @@ const A9901_BUILD='B1.0 Alpha99.1';
   }
   installStyle();if(state)ensure();applyVersion();
   window.__A9901_TEST__={build:A9901_BUILD,earned,left,spent,allocate,audit,probe,fullRegression,applyVersion,previous:window.__A9900_TEST__};
+})();
+
+
+// ===== Alpha99.2：現行 NPC 規則／回歸巡檢校正 =====
+// 本版只更新 QA／巡檢基準與版本資訊，不改 NPC 行為、玩法、數值、掉落、製作或存檔。
+// 背景：Alpha72 的歷史巡檢仍把巴姆特放在傲慢入口、把厲飛雨視為永久停用，
+// 並要求藍迪西／須凡一定要有可交易商品；這些期待值已被後續 Alpha84／98.42 現行規則取代。
+const A9902_BUILD='B1.0 Alpha99.2';
+(function(){
+  const CURRENT_ROUTE_EXPECT=[
+    ['town_witon','npc_bamut','bamut9842','巴姆特目前在威頓村，8 組製作'],
+    ['town_gludio','npc_lifeiyu','lifeiyu9842','厲飛雨依 Alpha98.42 已確認規則開放'],
+    ['town_windwood_castle','npc_landish','unavailable','藍迪西保留 NPC；完整阿肥商品表不足，不開放交易'],
+    ['town_heine_castle','npc_suvan','unavailable','須凡保留 NPC；完整阿肥商品表不足，不開放交易'],
+    ['town_witon','npc_ringwiz','ringwiz-pending9842','煉戒術士保留但尚未開放'],
+    ['town_aden','npc_upni','craft','亞丁烏普尼製作'],
+    ['town_aden','npc_norse','craft','亞丁諾斯製作'],
+    ['town_flame_audience','npc_flame_shadow','craft','炎魔之影製作'],
+    ['town_flame_audience','npc_imp','craft','小惡魔製作'],
+    ['town_flame_audience','npc_flame_smith','craft','炎魔鐵匠製作'],
+    ['town_sherine','npc_sherine','sherine','席琳祈禱']
+  ];
+  function routeNow(townId,npcId){
+    const npc=DATA.towns?.[townId]?.npcs?.find(n=>String(n.id||'')===String(npcId));
+    return npc?a72Route(townId,npc):'missing';
+  }
+  // 非破壞式現行 NPC 規則巡檢：不切村、不改角色，只看資料／路由與已鎖定規則。
+  function currentNpcAudit(){
+    const issues=[],rows=[];
+    for(const [townId,npcId,want,note] of CURRENT_ROUTE_EXPECT){
+      const got=routeNow(townId,npcId),ok=got===want;
+      rows.push({townId,npcId,want,got,ok,note});if(!ok)issues.push(townId+'/'+npcId+' 預期 '+want+'，實際 '+got);
+    }
+    const prideHasBamut=!!DATA.towns?.town_pride?.npcs?.some(n=>n.id==='npc_bamut');
+    const witonHasBamut=!!DATA.towns?.town_witon?.npcs?.some(n=>n.id==='npc_bamut');
+    if(prideHasBamut)issues.push('巴姆特不應再留在傲慢之塔入口');
+    if(!witonHasBamut)issues.push('威頓村缺少巴姆特');
+    let coverage={ok:false,total:0,usable:0,unavailable:0};
+    try{coverage=window.__A79_TEST__?.coverage?.()||coverage}catch(e){coverage={ok:false,error:String(e?.stack||e)}}
+    if(coverage?.ok!==true||Number(coverage?.total)!==90)issues.push('全 NPC 路由覆蓋未通過：'+Number(coverage?.total||0)+'/90');
+    let rules={ok:false,issues:['not-run']};
+    try{rules=window.__A9842_TEST__?.audit?.()||rules}catch(e){rules={ok:false,issues:[String(e?.stack||e)]}}
+    if(rules?.ok!==true)issues.push('Alpha98.42 現行 NPC 規則巡檢失敗：'+(rules?.issues||[]).join('；'));
+    let legacy=null;try{legacy=window.__A72_TEST__?.audit?.()||null}catch(e){}
+    return{
+      ok:issues.length===0,build:A9902_BUILD,issues,rows,
+      placement:{prideHasBamut,witonHasBamut},
+      allNpc:{ok:coverage?.ok===true,total:Number(coverage?.total||0),usable:Number(coverage?.usable||0),unavailable:Number(coverage?.unavailable||0)},
+      currentRuleAudit:{ok:rules?.ok===true,issues:rules?.issues||[]},
+      legacyAlpha72:{informational:true,ok:legacy?.ok===true,issues:legacy?.issues||[],note:'Alpha72 為歷史期待值，只保留參考；Alpha99.2 以現行規則判定。'}
+    };
+  }
+  // 實體中心命中 QA：Toast 是 1.6 秒臨時通知，不應被當成 NPC 本身 hitbox 故障。
+  // 只在巡檢期間暫時讓 Toast 不接收 pointer event，測完立刻恢復；不改正式玩家 UI CSS。
+  function physicalHitAudit(){
+    const style=document.createElement('style');style.id='a9902-hit-audit-style';style.textContent='.toast{pointer-events:none!important}';document.head.appendChild(style);
+    try{return window.__A79_TEST__?.allHit?.()||{ok:false,total:0,issues:['A79 hit audit unavailable']}}
+    catch(e){return{ok:false,total:0,issues:[String(e?.stack||e)]}}
+    finally{style.remove()}
+  }
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9902_BUILD}catch(e){document.title='樓梯口天堂 · '+A9902_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9902_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.2：校正現行 NPC 回歸巡檢規則；90 個 NPC 守門改以目前遊戲規則為準。本版不改 NPC 實際行為。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.2｜現行NPC規則巡檢校正｜線上化前總體檢｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9902_BUILD+'</b><p>正式線上化前總體檢第二階段：校正過時的 Alpha72 NPC 測試期待值，避免把後續已確認的 NPC 位置／開關規則誤判成回歸故障。</p><p>目前固定守門：巴姆特＝威頓村製作、厲飛雨＝現行開放、藍迪西／須凡＝保留但不交易、煉戒術士＝保留待補；全部 NPC 另有實點操作與實體命中 QA。</p><small>本版只動巡檢／測試層與版本資訊；NPC 行為、戰鬥、數值、掉落、製作、技能、裝備與存檔 schema 全部不變。</small>';
+  }
+  function audit(){
+    const issues=[],npc=currentNpcAudit();if(!npc.ok)issues.push(...npc.issues);
+    let base=null;try{base=window.__A9900_TEST__?.audit?.()||null}catch(e){issues.push('Alpha99.0 基線巡檢例外：'+String(e?.stack||e))}
+    if(base&&base.ok!==true)issues.push('Alpha99.0 基線巡檢失敗：'+(base.issues||[]).join('；'));
+    const regen=typeof window.__A9888_TEST__?.regenEnabled==='function'?window.__A9888_TEST__.regenEnabled():null;
+    if(regen!==true)issues.push('BOSS 回血正式總開關不是開啟狀態');
+    if(document.querySelector('[data-drawer="trade"]'))issues.push('交易所入口重新出現');
+    return{ok:issues.length===0,build:A9902_BUILD,issues,npc,base,bossRegenEnabled:regen,tradeRemoved:!document.querySelector('[data-drawer="trade"]')};
+  }
+  async function fullRegression(){
+    const issues=[];
+    // 先跑真正的 90 NPC click/dispatch 面板巡檢；此 API 是 async，必須 await，避免把 Promise 誤判為失敗。
+    let npcClick=null;try{npcClick=await window.__A79_TEST__?.npcAudit?.()}catch(e){npcClick={ok:false,error:String(e?.stack||e)}}
+    if(npcClick?.ok!==true||Number(npcClick?.passed)!==Number(npcClick?.total)||Number(npcClick?.total)!==90)issues.push('90 個 NPC 實點操作測試失敗');
+    const own=audit();if(!own.ok)issues.push(...own.issues);
+    let ability=null;try{ability=await window.__A9901_TEST__.probe()}catch(e){ability={ok:false,error:String(e?.stack||e)}}
+    if(ability?.ok!==true)issues.push('Lv50+ 能力點回歸測試失敗');
+    let logClick=null;try{logClick=await window.__A9887_TEST__.clickAudit()}catch(e){logClick={ok:false,error:String(e?.stack||e)}}
+    if(logClick?.ok!==true)issues.push('戰鬥日誌怪物連結實點測試失敗');
+    let craft=null;try{craft=window.__A9884_TEST__?.audit?.()||null}catch(e){craft={ok:false,error:String(e?.stack||e)}}
+    if(craft?.ok!==true)issues.push('原材料直製巡檢失敗');
+    applyVersion();
+    return{ok:issues.length===0,build:A9902_BUILD,issues,own,npcClick,ability,logClick,craft};
+  }
+  const renderBase=render;render=function(){const r=renderBase.apply(this,arguments);applyVersion();return r};
+  const initBase=init;init=function(){const r=initBase.apply(this,arguments);setTimeout(applyVersion,0);return r};
+  applyVersion();
+  window.__A9902_TEST__={build:A9902_BUILD,audit,currentNpcAudit,physicalHitAudit,fullRegression,applyVersion,routeNow,previous:window.__A9901_TEST__};
+})();
+
+
+// =====================================================================
+// B1.0 Alpha99.3 — 戰鬥／怪物／掉落／技能現行規則總體檢守門
+// 本版只新增 QA／巡檢層與版本資訊，不改戰鬥公式、怪物數值、掉落率、技能效果、NPC、製作或存檔。
+// 歷史 Alpha80／83 的部分期待值已被 Alpha98.42／98.43／98.79 現行規則取代；正式守門改讀現行資料層。
+// =====================================================================
+const A9903_BUILD='B1.0 Alpha99.3';
+(function(){
+  const A9903_EXPECT=Object.freeze({
+    mobs:353,maps:199,dropTables:327,dropRows:2680,items:789,skills:131,skillBooks:124,
+    worldBossConfigs:22,fieldMonsters:3,currentPublicBosses:14,currentStandardBosses:13
+  });
+  function cloneNow(){try{return typeof a74Clone==='function'?a74Clone(state):JSON.parse(JSON.stringify(state))}catch(e){return null}}
+  function dataAudit(){
+    const issues=[];
+    const mobs=Object.entries(DATA.mobs||{}),maps=Object.entries(DATA.maps||{}),drops=Object.entries(DATA.dropsByMobName||{}),items=DATA.items||{},skills=DATA.skills||{};
+    let mapMobRefs=0,dropRows=0;const missingMobRefs=[],missingDropItems=[],badDropRates=[];
+    for(const [mid,arr] of maps)for(const id of (Array.isArray(arr)?arr:[])){mapMobRefs++;if(!DATA.mobs?.[id])missingMobRefs.push(mid+':'+id)}
+    for(const [name,rows] of drops)for(const row of (Array.isArray(rows)?rows:[])){dropRows++;const id=row?.[0],rate=Number(row?.[1]);if(id&&!items[id])missingDropItems.push(name+':'+id);if(!Number.isFinite(rate)||rate<0||rate>100)badDropRates.push(name+':'+String(row?.[1]))}
+    const skillBooks=Object.entries(items).filter(([,v])=>v?.sk),missingSkillRefs=skillBooks.filter(([,v])=>!skills[v.sk]).map(([id,v])=>id+':'+v.sk);
+    const publicBosses=typeof a9843PublicBossEntries==='function'?a9843PublicBossEntries():[],standardBosses=typeof a9843StandardBossEntries==='function'?a9843StandardBossEntries():[];
+    const counts={mobs:mobs.length,maps:maps.length,dropTables:drops.length,dropRows,items:Object.keys(items).length,skills:Object.keys(skills).length,skillBooks:skillBooks.length,worldBossConfigs:Object.keys(DATA.worldBosses||{}).length,currentPublicBosses:publicBosses.length,currentStandardBosses:standardBosses.length};
+    for(const k of ['mobs','maps','dropTables','dropRows','items','skills','skillBooks','worldBossConfigs','currentPublicBosses','currentStandardBosses'])if(Number(counts[k])!==Number(A9903_EXPECT[k]))issues.push(k+' 數量 '+counts[k]+'，基線 '+A9903_EXPECT[k]);
+    if(missingMobRefs.length)issues.push('地圖怪物參照缺失 '+missingMobRefs.length);
+    if(missingDropItems.length)issues.push('掉落物品參照缺失 '+missingDropItems.length);
+    if(badDropRates.length)issues.push('非法掉落機率 '+badDropRates.length);
+    if(missingSkillRefs.length)issues.push('技能書技能參照缺失 '+missingSkillRefs.length);
+    if(Number(A9842_FIELD_MONSTERS)!==A9903_EXPECT.fieldMonsters)issues.push('一般獵場同場怪物數 '+Number(A9842_FIELD_MONSTERS||0)+'，基線 '+A9903_EXPECT.fieldMonsters);
+    return{ok:issues.length===0,issues,counts,fieldMonsters:Number(A9842_FIELD_MONSTERS||0),refs:{mapMobRefs,missingMobRefs:missingMobRefs.length,missingDropItems:missingDropItems.length,badDropRates:badDropRates.length,missingSkillRefs:missingSkillRefs.length}};
+  }
+  function combatSmoke(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=cloneNow(),active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:null,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:null,mapSnap=typeof mapTab!=='undefined'?mapTab:null,out={};
+    try{
+      a76TestReset('knight',60);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;
+      const before={kills:Number(state.session?.kills||0),exp:Number(state.player?.exp||0),gold:Number(state.player?.gold||0)};let guard=0;
+      while(Number(state.session?.kills||0)===before.kills&&guard++<3000)attack();
+      out.killed=Number(state.session?.kills||0)>before.kills;out.expDelta=Number(state.player?.exp||0)-before.exp;out.goldDelta=Number(state.player?.gold||0)-before.gold;out.mobCount=(state.mobs||[]).filter(Boolean).length;out.expectedMobCount=Number(A9842_FIELD_MONSTERS||0);out.attackLoops=guard;out.ok=out.killed&&out.expDelta>=0&&out.goldDelta>=0&&out.mobCount===out.expectedMobCount;
+    }catch(e){out.ok=false;out.error=String(e?.stack||e)}finally{try{if(storage)a76StorageRestore(storage)}catch(e){}if(snap)state=snap;if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined')mapTab=mapSnap;try{derive();render()}catch(e){}}
+    return out;
+  }
+  function safeAudit(obj){try{return obj?.audit?.()||{ok:false,error:'audit missing'}}catch(e){return{ok:false,error:String(e?.stack||e)}}}
+  function currentAudit(){
+    const data=dataAudit(),combat=combatSmoke(),field=safeAudit(window.__A9842_TEST__),rewards=safeAudit(window.__A9874_TEST__),drop77=safeAudit(window.__A9877_TEST__),drop78=safeAudit(window.__A9878_TEST__),boss=safeAudit(window.__A9879_TEST__),skills=safeAudit(window.__A82_TEST__),regen=safeAudit(window.__A9888_TEST__);
+    const status={data:data.ok,combat:combat.ok,field:field.ok===true,rewards:rewards.ok===true,drop77:drop77.ok===true,drop78:drop78.ok===true,boss:boss.ok===true,skills:skills.ok===true,bossRegen:regen.ok===true},issues=[];
+    for(const [k,v] of Object.entries(status))if(!v)issues.push(k+' 未通過');
+    const unresolved=Array.isArray(drop78?.unresolved)?drop78.unresolved.map(x=>({mid:x.mid,name:x.name,kind:x.kind})):[];if(unresolved.length>3)issues.push('來源缺失掉落怪物增加到 '+unresolved.length);
+    return{ok:issues.length===0,build:A9903_BUILD,issues,status,data,combat,summary:{drop77:drop77?.counts||null,drop78:drop78?.counts||null,boss:{public:boss?.cross?.currentPublic||0,standard:boss?.cross?.currentStandard||0,ticketRule:boss?.ticketRule||null},skills:skills?.data?.counts||null},unresolvedDrops:{informational:true,count:unresolved.length,rows:unresolved,note:'來源缺資料，依既定規則不猜；不視為 runtime 故障。'},legacy:{informational:true,alpha80:'historical-not-gated',alpha83:'historical-not-gated',note:'Alpha80／83 的舊期待值已被後續現行規則取代。'}};
+  }
+  async function runtimeDropBossProbe(){
+    const call=async(obj,fn)=>{try{const f=obj?.[fn];return typeof f==='function'?await f():{ok:false,error:'missing '+fn}}catch(e){return{ok:false,error:String(e?.stack||e)}}};
+    const region=await call(window.__A9878_TEST__,'region'),killRegion=await call(window.__A9878_TEST__,'killRegionProbe'),oldIndependent=await call(window.__A9878_TEST__,'oldIndependentProbe'),bossTicket=await call(window.__A9879_TEST__,'ticketBoundaryProbe'),bossDrop=await call(window.__A9879_TEST__,'independentDropProbe');
+    const status={region:region?.ok===true,killRegion:killRegion?.ok===true,oldIndependent:oldIndependent?.ok===true,bossTicket:bossTicket?.ok===true,bossDrop:bossDrop?.ok===true},issues=[];for(const [k,v] of Object.entries(status))if(!v)issues.push(k+' 未通過');
+    return{ok:issues.length===0,issues,status,counts:{regionRows:Array.isArray(region?.rows)?region.rows.length:0,oldIndependentRows:Number(oldIndependent?.rows||0),bossDropRows:Number(bossDrop?.rows||0)}};
+  }
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9903_BUILD}catch(e){document.title='樓梯口天堂 · '+A9903_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9903_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.3：正式線上化前第三階段，新增戰鬥／怪物／掉落／技能現行規則守門；本版不改玩法數值。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.3｜戰鬥／怪物／掉落／技能總體檢｜線上化前守門｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9903_BUILD+'</b><p>線上化前第三階段：戰鬥、怪物、掉落、技能與世界王改以目前真正生效的規則做固定回歸守門。</p><p>歷史 Alpha80／83 的舊期待值只保留參考，不再把後續已正式更新的規則誤判成故障。</p><small>本版只有 QA／巡檢層與版本資訊；沒有修改戰鬥公式、怪物數值、掉落率、技能效果、NPC、製作或存檔 schema。</small>';
+  }
+  async function fullRegression(){
+    const issues=[];let base=null;try{base=await window.__A9902_TEST__?.fullRegression?.()}catch(e){base={ok:false,error:String(e?.stack||e)}}if(base?.ok!==true)issues.push('Alpha99.2 基線回歸未通過');
+    const own=currentAudit();if(!own.ok)issues.push(...own.issues);const runtime=await runtimeDropBossProbe();if(!runtime.ok)issues.push(...runtime.issues);
+    let logClick=null;try{logClick=await window.__A9887_TEST__?.clickAudit?.()}catch(e){logClick={ok:false,error:String(e?.stack||e)}}if(logClick?.ok!==true)issues.push('戰鬥日誌怪物掉落連結未通過');
+    applyVersion();return{ok:issues.length===0,build:A9903_BUILD,issues,base:{ok:base?.ok===true,npcClick:base?.npcClick?.ok===true,ability:base?.ability?.ok===true,logClick:base?.logClick?.ok===true,craft:base?.craft?.ok===true},own:{ok:own.ok,status:own.status,unresolvedDrops:own.unresolvedDrops},runtime,logClick:{ok:logClick?.ok===true}};
+  }
+  const renderBase=render;render=function(){const r=renderBase.apply(this,arguments);applyVersion();return r};
+  const initBase=init;init=function(){const r=initBase.apply(this,arguments);setTimeout(applyVersion,0);return r};
+  applyVersion();window.__A9903_TEST__={build:A9903_BUILD,audit:currentAudit,dataAudit,combatSmoke,runtime:runtimeDropBossProbe,fullRegression,applyVersion,previous:window.__A9902_TEST__};
+})();
+
+
+// =====================================================================
+// B1.0 Alpha99.4 — 正式線上化前第四階段：資產系統與存檔現行規則守門
+// 範圍：裝備／背包／強化／製作／倉庫／自動補給／自動販賣／存檔。
+// 本版只新增 QA / 回歸守門與版本資訊，不改玩法、數值、道具、配方、倉庫規則或存檔 schema。
+// =====================================================================
+const A9904_BUILD='B1.0 Alpha99.4';
+(function(){
+  function cloneNow(){try{return typeof a74Clone==='function'?a74Clone(state):JSON.parse(JSON.stringify(state))}catch(e){return null}}
+  function safe(fn){try{return typeof fn==='function'?fn():{ok:false,error:'missing'}}catch(e){return{ok:false,error:String(e?.stack||e)}}}
+  function basicAudit(){
+    const issues=[];
+    const fns={
+      inventory:typeof a8Add==='function'&&typeof a8Take==='function'&&typeof a8Count==='function',
+      equipment:typeof a8Equip==='function'&&typeof a8Unequip==='function'&&typeof a16PoolPush==='function',
+      enhancement:typeof a16EnhanceSlot==='function'&&typeof a23EnhanceProfile==='function',
+      crafting:typeof window.__A9884_TEST__?.plan==='function'&&typeof window.__A9884_TEST__?.doCraft==='function',
+      warehouse:typeof a34WhLoad==='function'&&typeof a9844WhDeposit==='function'&&typeof a9844WhWithdraw==='function',
+      autoSupply:typeof a97EnsureState==='function'&&typeof a97RestockOne==='function',
+      autoSell:typeof a971EnsureSellState==='function'&&typeof a971AutoSellSweep==='function',
+      save:typeof save==='function'&&typeof a46ReadSlot==='function'&&typeof a46WriteSlot==='function'
+    };
+    for(const [k,v] of Object.entries(fns))if(!v)issues.push(k+' 核心函式缺失');
+    const wh=safe(()=>window.__A9844_TEST__?.audit?.());
+    const craft=safe(()=>window.__A9884_TEST__?.audit?.());
+    const enhance=safe(()=>window.__A23_TEST__?.selfTest?.());
+    const supply=safe(()=>window.__A97_TEST__?.audit?.());
+    if(wh?.ok!==true)issues.push('現行倉庫規則未通過');
+    if(Number(wh?.warehouse?.version)!==2)issues.push('倉庫不是 version 2');
+    if(craft?.ok!==true)issues.push('原材料直製未通過');
+    if(enhance?.ok!==true)issues.push('現行強化表未通過');
+    if(supply?.ok!==true)issues.push('自動補給未通過');
+    return{ok:issues.length===0,build:A9904_BUILD,issues,fns,warehouse:{ok:wh?.ok===true,version:wh?.warehouse?.version,slots:wh?.warehouse?.slots},craft:{ok:craft?.ok===true,recipes:craft?.recipes,craftableResults:craft?.craftableResults},enhancement:{ok:enhance?.ok===true,samples:enhance?.samples||null},autoSupply:{ok:supply?.ok===true}};
+  }
+  function saveRoundtrip(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=cloneNow(),active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:null,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:null,mapSnap=typeof mapTab!=='undefined'?mapTab:null,conflictSnap=(typeof A9837_CONFLICT!=='undefined'?{...A9837_CONFLICT}:null);
+    const out={};
+    try{
+      // 在已快照的隔離環境中清空 durable 測試槽與測試用 conflict flag；finally 會完整還原玩家狀態。
+      try{localStorage.clear()}catch(e){}
+      try{if(typeof a9837ResetConflict==='function')a9837ResetConflict()}catch(e){}
+      a76TestReset('knight',1);state.player.lv=60;a46ActiveSlot=1;if(state?.a46)state.a46.characterSlot=1;
+      a971EnsureSellState();a97EnsureState();
+      state.inventory={...(state.inventory||{}),potion_heal:77,wpn_22:123};state.player.gold=987654;
+      state.autoCombat.autoRestock.wpn_22=true;
+      state.autoSell.enabled=true;state.autoSell.items.potion_heal={enabled:false,keep:9};
+      const saved=save(),raw=a46ReadSlot(1);
+      const meta=raw?.saveMeta||{};
+      out.saved=saved===true;out.raw=!!raw;out.inventory=Number(raw?.inventory?.potion_heal||0)===77&&Number(raw?.inventory?.wpn_22||0)===123;
+      out.gold=Number(raw?.player?.gold||0)===987654;out.restock=raw?.autoCombat?.autoRestock?.wpn_22===true;
+      out.autoSell=raw?.autoSell?.enabled===true&&Number(raw?.autoSell?.items?.potion_heal?.keep||0)===9;
+      out.schema=String(raw?.schema||'')===String(A63_SCHEMA);out.sequence=Number(meta.storageSeq||0)>0&&typeof meta.storageRev==='string'&&meta.storageRev.length>0;
+      out.ok=Object.entries(out).filter(([k])=>!['detail'].includes(k)).every(([k,v])=>k==='ok'||v===true);
+      out.detail={schema:raw?.schema||null,storageSeq:Number(meta.storageSeq||0),hasStorageRev:!!meta.storageRev};
+    }catch(e){out.ok=false;out.error=String(e?.stack||e)}finally{
+      try{if(storage)a76StorageRestore(storage)}catch(e){}
+      if(snap)state=snap;if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined')mapTab=mapSnap;
+      try{if(conflictSnap&&typeof A9837_CONFLICT!=='undefined')A9837_CONFLICT={...conflictSnap}}catch(e){}
+      try{derive();render()}catch(e){}
+    }
+    return out;
+  }
+  function assetRuntime(){
+    const out={},issues=[];
+    // 存檔 round-trip 必須先跑，避免歷史自測刻意寫入的模擬角色槽造成跨分頁衝突假警報。
+    out.save=saveRoundtrip();if(out.save?.ok!==true)issues.push('現行存檔 round-trip 未通過');
+    out.warehouse=safe(()=>window.__A9844_TEST__?.selfTest?.());if(out.warehouse?.ok!==true)issues.push('倉庫特殊裝備合併／還原未通過');
+    const oldConfirm=window.confirm;try{window.confirm=()=>true;out.enhance=safe(()=>window.__A81_TEST__?.enhance?.())}finally{window.confirm=oldConfirm}
+    if(out.enhance?.ok!==true)issues.push('裝備強化／卸裝重裝／爆裝清理未通過');
+    out.craft=safe(()=>window.__A9884_TEST__?.probe?.());if(out.craft?.ok!==true)issues.push('原材料直製實作未通過');
+    return{ok:issues.length===0,issues,warehouse:{ok:out.warehouse?.ok===true,slots:out.warehouse?.warehouse?.slots,blessCount:out.warehouse?.warehouse?.blessCount,restored:out.warehouse?.warehouse?.restored},enhance:out.enhance,craft:out.craft,save:out.save};
+  }
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9904_BUILD}catch(e){document.title='樓梯口天堂 · '+A9904_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9904_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.4：正式線上化前第四階段，新增裝備／背包／強化／製作／倉庫／自動補給／存檔現行規則守門；本版不改玩法。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.4｜資產系統與存檔總體檢｜線上化前守門｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9904_BUILD+'</b><p>線上化前第四階段：裝備、背包、強化、原材料直製、倉庫、自動補給／販賣與現行存檔 round-trip 納入固定回歸守門。</p><p>Alpha97.1 的舊自動販賣持久化測試已被後續跨分頁存檔機制淘汰；本版改以目前真正的 final save → slot read 驗證。</p><small>本版只有 QA／巡檢層與版本資訊；沒有修改道具數值、強化機率、製作配方、倉庫規則、自動補給規則或存檔 schema。</small>';
+  }
+  async function fullRegression(){
+    const issues=[];let base=null;try{base=await window.__A9903_TEST__?.fullRegression?.()}catch(e){base={ok:false,error:String(e?.stack||e)}}if(base?.ok!==true)issues.push('Alpha99.3 基線回歸未通過');
+    const own=basicAudit();if(!own.ok)issues.push(...own.issues);
+    const runtime=assetRuntime();if(!runtime.ok)issues.push(...runtime.issues);
+    let ability=null;try{ability=window.__A9901_TEST__?.audit?.()}catch(e){ability={ok:false,error:String(e?.stack||e)}}if(ability?.ok!==true)issues.push('Lv50+ 能力點守門未通過');
+    let npc=null;try{npc=window.__A9902_TEST__?.audit?.()}catch(e){npc={ok:false,error:String(e?.stack||e)}}if(npc?.ok!==true)issues.push('NPC 現行規則守門未通過');
+    const regen=safe(()=>window.__A9888_TEST__?.audit?.());if(regen?.ok!==true||regen?.regenEnabled!==true)issues.push('BOSS 回血正式恢復狀態異常');
+    applyVersion();return{ok:issues.length===0,build:A9904_BUILD,issues,base:{ok:base?.ok===true},own,runtime,ability:{ok:ability?.ok===true},npc:{ok:npc?.ok===true},bossRegen:{ok:regen?.ok===true,enabled:regen?.regenEnabled}};
+  }
+  const renderBase=render;render=function(){const r=renderBase.apply(this,arguments);applyVersion();return r};
+  const initBase=init;init=function(){const r=initBase.apply(this,arguments);setTimeout(applyVersion,0);return r};
+  applyVersion();window.__A9904_TEST__={build:A9904_BUILD,audit:basicAudit,runtime:assetRuntime,saveRoundtrip,fullRegression,applyVersion,previous:window.__A9903_TEST__};
+})();
+
+
+// ===== Alpha99.5：地圖／BOSS／自動戰鬥／離線收益／長玩總體檢守門 =====
+const A9905_BUILD='B1.0 Alpha99.5';
+(()=>{
+  function safeCall(fn,fallback=null){try{return typeof fn==='function'?fn():fallback}catch(e){return{ok:false,error:String(e?.stack||e)}}}
+  function baseAudit(){
+    const issues=[];
+    const field=safeCall(()=>window.__A9867_TEST__?.audit?.(),{}),multi=safeCall(()=>window.__A9869_TEST__?.audit?.(),{}),offline=safeCall(()=>window.__A9881_TEST__?.audit?.(),{}),boss=safeCall(()=>window.__A9879_TEST__?.audit?.(),{}),regen=safeCall(()=>window.__A9888_TEST__?.audit?.(),{});
+    if(field?.ok!==true||Number(field?.fieldCount)!==3)issues.push('現行一般獵場 3 怪規格異常');
+    if(multi?.ok!==true||Number(multi?.slots)!==4||Number(multi?.capMs)!==86400000||Number(multi?.owner)!==0)issues.push('四角色／24h 離線政策異常');
+    if(offline?.ok!==true||Number(offline?.exactTickMs)!==100||Number(offline?.capMs)!==86400000)issues.push('離線 100ms／24h 核心異常');
+    if(boss?.ok!==true||Number(boss?.cross?.currentPublic)!==14||Number(boss?.cross?.currentStandard)!==13)issues.push('現行世界王 14／13 規格異常');
+    // Alpha98.88 audit 在尚未建立角色時會因 UI 樣本缺 state 而回報 UI-only issue；正式守門只驗證總開關與原始回血資料保留。
+    const regenEnabled=window.__A9888_TEST__?.regenEnabled?.();
+    if(regenEnabled!==true||regen?.dataKept!==true||Number(regen?.healBossCount||0)<=0)issues.push('BOSS 回血正式恢復／原資料保留狀態異常');
+    for(const [name,ok] of Object.entries({mapRepair:typeof a30RepairState==='function',spawn:typeof spawnAll==='function',autoClock:typeof a453ResetForegroundCombatClock==='function',pause:typeof a36PauseForBackground==='function',resume:typeof a36ResumeFromBackground==='function',offlineReplay:typeof a45ReplayChunk==='function',bossDrawer:typeof a43BossDrawer==='function'}))if(!ok)issues.push(name+' API 遺失');
+    return{ok:issues.length===0,build:A9905_BUILD,issues,fieldCount:Number(field?.fieldCount||0),slots:Number(multi?.slots||0),offlineCapMs:Number(offline?.capMs||0),offlineTickMs:Number(offline?.exactTickMs||0),worldBoss:{public:Number(boss?.cross?.currentPublic||0),standard:Number(boss?.cross?.currentStandard||0)},bossRegen:{enabled:regenEnabled,dataKept:regen?.dataKept===true,healBossCount:Number(regen?.healBossCount||0),uiOnlyIssue:regen?.ok===false?(regen?.issues||[]):[]}};
+  }
+  function mapAudit(){
+    const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const bad=[];let tested=0,skipped=0,special=0;const fieldCount=Number(window.__A9867_TEST__?.audit?.()?.fieldCount||3);
+    try{
+      a76TestReset('knight',1);state.player.maxHp=1e12;state.player.hp=1e12;state.player.maxMp=1e9;state.player.mp=1e9;state.dead=false;state.running=false;
+      for(const id of Object.keys(DATA.maps||{})){
+        if(DATA.towns?.[id])continue;state.mapId=id;state.inVillage=false;state.dead=false;state.running=false;state.player.hp=state.player.maxHp;
+        let sp=null;try{sp=a452SpecialDef()}catch(e){}
+        if(sp){special++;try{a30RepairState('a9905-map-audit',true);if(!Array.isArray(state.mobs)||state.mobs.length!==MOB_COUNT||state.target<0||state.target>=Math.max(1,state.mobs.length))bad.push({id,kind:'special',len:state.mobs?.length,expected:MOB_COUNT,target:state.target})}catch(e){bad.push({id,kind:'special-error',error:String(e)})}continue}
+        let pool=[];try{pool=mobPool()||[]}catch(e){}if(!pool.length){skipped++;continue}
+        try{spawnAll();tested++;const alive=(state.mobs||[]).filter(Boolean).length;if(state.mobs.length!==fieldCount||alive!==fieldCount||state.target<0||state.target>=fieldCount)bad.push({id,kind:'field',len:state.mobs.length,alive,expected:fieldCount,target:state.target})}catch(e){bad.push({id,kind:'field-error',error:String(e)})}
+      }
+    }catch(e){bad.push({id:'audit',kind:'exception',error:String(e?.stack||e)})}
+    finally{try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push({id:'restore',kind:'exception',error:String(e)})}}
+    return{ok:bad.length===0&&tested>0,build:A9905_BUILD,tested,skipped,special,fieldCount,bad};
+  }
+  function autoLongProbe(minutes=30){
+    const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const out={ok:false,minutes:Number(minutes)||30};
+    try{
+      const fieldCount=Number(window.__A9867_TEST__?.audit?.()?.fieldCount||3),steps=Math.max(1,Math.round(out.minutes*60/5));
+      a76TestReset('knight',1);state.mapId='training';state.inVillage=false;state.dead=false;state.running=true;derive();state.player.atk=Math.max(100000,Number(state.player.atk||0));state.player.maxHp=1e15;state.player.hp=1e15;state.player.maxMp=1e12;state.player.mp=1e12;state.autoCombat={...(state.autoCombat||{}),heal:false,healSkill:false,haste:false,blue:false,attackSkill:''};spawnAll();
+      A45_SIM_NOW=100000;A45_SIM_EPOCH=1700000000000;a77ResetPerfSchedulers(0);a45NormalizeCombatClock(A45_SIM_NOW);const k0=Number(state.session.kills||0),g0=Number(state.session.gold||0);let ran=0;
+      a77QuietLootVisual(()=>a45WithQuietRuntime(()=>{for(let i=0;i<steps;i++){if(state.dead||!state.running)break;A45_SIM_NOW+=5000;A45_SIM_EPOCH+=5000;tick(5,A45_SIM_NOW);ran++}}));
+      const kills=Number(state.session.kills||0)-k0,gold=Number(state.session.gold||0)-g0,mobLen=(state.mobs||[]).length;
+      Object.assign(out,{ok:ran===steps&&!state.dead&&kills>0&&gold>=0&&a77FiniteState()&&mobLen===fieldCount,ran,steps,kills,gold,mobLen,fieldCount,lv:state.player.lv,dead:!!state.dead});
+    }catch(e){out.error=String(e?.stack||e)}
+    finally{try{A45_SIM_NOW=0;A45_SIM_EPOCH=0;a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else state=null}catch(e){out.restoreError=String(e);out.ok=false}}
+    return out;
+  }
+  function autoSupplyClockProbe(){
+    const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot;const out={ok:false};
+    try{a76TestReset('knight',1);state.mapId='training';state.inVillage=false;state.inventory={potion_heal:10};state.player.maxHp=1000;state.player.hp=100;a11EnsureState();state.autoCombat.heal=true;state.autoCombat.healPct=50;state.running=true;a11AutoAt=999999;const before=performance.now();a453ResetForegroundCombatClock('a9905');const resetAt=a11AutoAt,p0=a8Count('potion_heal');a11Auto(resetAt+600);const p1=a8Count('potion_heal');Object.assign(out,{ok:p1<p0&&resetAt>=before-100,before,resetAt,potionsBefore:p0,potionsAfter:p1})}catch(e){out.error=String(e?.stack||e)}finally{try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(snap){state=snap;derive();render()}else state=null}catch(e){out.restoreError=String(e);out.ok=false}}return out;
+  }
+  async function offlineBoundaryProbe(){
+    const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot;const out={ok:false};
+    try{a76TestReset('knight',1);state.mapId='training';state.inVillage=false;state.dead=false;state.running=false;const base=1700000000000;state.a36=(state.a36&&typeof state.a36==='object')?state.a36:{};state.a36.background={...(state.a36.background||{}),active:true,hiddenAt:base,wasRunning:false,mapId:'training'};a36ResumeFromBackground('a9905-cap',base+25*3600*1000,false);await new Promise(r=>setTimeout(r,30));const applied=Number(state.a46?.lastOfflineAppliedElapsed||0),capped=Number(state.a46?.lastOfflineCappedMs||0);Object.assign(out,{ok:applied===86400000&&capped===3600000&&!state.a45?.offlineSettling,applied,capped,settling:!!state.a45?.offlineSettling})}catch(e){out.error=String(e?.stack||e)}finally{try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(snap){state=snap;derive();render()}else state=null}catch(e){out.restoreError=String(e);out.ok=false}}return out;
+  }
+  function bossProbe(){
+    const ticket=safeCall(()=>window.__A9879_TEST__?.ticketBoundaryProbe?.(),{}),drop=safeCall(()=>window.__A9879_TEST__?.independentDropProbe?.(),{}),cross=safeCall(()=>window.__A9879_TEST__?.audit?.(),{});
+    let ui={ok:false};const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot;
+    try{a76TestReset('knight',1);state.player.lv=60;a43EnsureState();const h=a43BossDrawer();ui={ok:typeof h==='string'&&h.length>100&&!/NaN|undefined/.test(h),chars:h.length}}catch(e){ui={ok:false,error:String(e?.stack||e)}}finally{try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(snap){state=snap;derive();render()}else state=null}catch(e){ui.restoreError=String(e);ui.ok=false}}
+    return{ok:ticket?.ok===true&&drop?.ok===true&&cross?.ok===true&&ui.ok,ticket,drop:{ok:drop?.ok===true,rows:drop?.rows,unique:drop?.unique,got:drop?.got,missed:drop?.missed||[]},worldBoss:{public:cross?.cross?.currentPublic,standard:cross?.cross?.currentStandard},ui};
+  }
+  async function multiSlotProbe(){
+    // 必須獨立執行，避免其他 mutating probe 留下的模擬時間軸污染。
+    const multi=await window.__A9869_TEST__?.multi?.(),e2e=await window.__A9869_TEST__?.e2e?.();return{ok:multi?.ok===true&&e2e?.ok===true,multi:{ok:multi?.ok===true,passed:multi?.passed,total:multi?.total,rows:multi?.rows||[]},e2e:{ok:e2e?.ok===true,passed:e2e?.passed,total:e2e?.total,rows:e2e?.rows||[]}};
+  }
+  async function offline2hProbe(){
+    const perf=window.__A9881_TEST__?.perf?.(2*60*60*1000),integration=await window.__A9881_TEST__?.integration?.(2*60*60*1000);return{ok:perf?.ok===true&&integration?.ok===true,perf:{ok:perf?.ok===true,wallMs:perf?.wallMs,sampleMs:perf?.sampleMs,sampleKills:perf?.sampleKills,fastMs:perf?.fastMs,directKills:perf?.directKills,simMs:perf?.simMs},integration:{ok:integration?.ok===true,wallMs:integration?.wallMs,simMs:integration?.simMs,pending:integration?.pending===true,last:integration?.last||null,report:integration?.report?{elapsed:integration.report.elapsed,kills:integration.report.kills,exp:integration.report.exp,gold:integration.report.gold,dead:integration.report.dead,levelBefore:integration.report.levelBefore,levelAfter:integration.report.levelAfter,startMapId:integration.report.startMapId,endMapId:integration.report.endMapId}:null}};
+  }
+  async function priorGates(){
+    const rows=[];const add=(name,obj)=>rows.push({name,ok:obj?.ok===true,issues:obj?.issues||obj?.bad?.map?.(x=>x?.name||String(x))||[]});
+    // Alpha99.1 的 audit 需要現成角色；線上化前守門改用會自行建立／還原測試角色的 probe，避免登入畫面無角色時出現假 FAIL。
+    let stat={ok:false,issues:['not-run']};try{stat=await window.__A9901_TEST__?.probe?.()||stat}catch(e){stat={ok:false,issues:[String(e?.stack||e)]}}add('Alpha99.1 能力點',stat);
+    add('Alpha99.2 NPC',safeCall(()=>window.__A9902_TEST__?.audit?.(),{}));add('Alpha99.3 戰鬥資料',safeCall(()=>window.__A9903_TEST__?.audit?.(),{}));add('Alpha99.4 資產存檔',safeCall(()=>window.__A9904_TEST__?.audit?.(),{}));return{ok:rows.every(x=>x.ok),rows};
+  }
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9905_BUILD}catch(e){document.title='樓梯口天堂 · '+A9905_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9905_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.5：正式線上化前第五階段，新增地圖／BOSS／自動戰鬥／離線收益／長玩流程守門；本版不改玩法。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.5｜地圖・BOSS・自動戰鬥・離線長玩總體檢｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9905_BUILD+'</b><p>線上化前第五階段：地圖怪物舞台、世界王、自動狩獵、前景／背景時間軸、24 小時離線封頂、四角色掛網與長時間循環納入現行守門。</p><p>歷史長玩測試中仍有舊 10 怪／舊世界王期待值；本版不拿過時規則反向改遊戲，而以 Alpha98.42 之後現行 3 怪、Alpha98.69 四角色並行與 Alpha98.81 高速離線規則驗證。</p><small>本版只有 QA／巡檢層與版本資訊；沒有修改地圖、怪物、BOSS 數值、掉落、自動補給、離線收益公式或存檔 schema。</small>';
+  }
+  async function fullRegression(){
+    const issues=[],base=baseAudit();if(!base.ok)issues.push(...base.issues);
+    // 多角色測試必須最先執行；能力點 probe 與其他測試都會暫時建立測試角色／時間軸，雖會還原但不應拿來污染多角色守門。
+    const multi=await multiSlotProbe();if(!multi.ok)issues.push('四角色同時掛網／切換 E2E 未通過');
+    const prior=await priorGates();if(!prior.ok)issues.push('Alpha99.1～99.4 前置守門未通過');
+    const maps=mapAudit();if(!maps.ok)issues.push('現行地圖生成守門未通過');
+    const auto=autoLongProbe(30);if(!auto.ok)issues.push('前景自動戰鬥 30 分鐘加速循環未通過');
+    const supply=autoSupplyClockProbe();if(!supply.ok)issues.push('返回前景後自動補給時鐘未通過');
+    const offline=await offlineBoundaryProbe();if(!offline.ok)issues.push('25h→24h 離線封頂未通過');
+    const boss=bossProbe();if(!boss.ok)issues.push('世界王現行守門未通過');
+    const stable=safeCall(()=>window.__A9867_TEST__?.stabilityProbe?.(),{}),autoUi=safeCall(()=>window.__A9867_TEST__?.autoProbe?.(),{});if(stable?.ok!==true||autoUi?.ok!==true)issues.push('地圖生命週期／自動狩獵 UI 守門未通過');
+    applyVersion();return{ok:issues.length===0,build:A9905_BUILD,issues,prior,base,multi,maps,auto,supply,offline,boss,stability:{ok:stable?.ok===true,issues:stable?.issues||[]},autoUi:{ok:autoUi?.ok===true,issues:autoUi?.issues||[]}};
+  }
+  const renderBase=render;render=function(){const r=renderBase.apply(this,arguments);applyVersion();return r};
+  const initBase=init;init=function(){const r=initBase.apply(this,arguments);setTimeout(applyVersion,0);return r};
+  applyVersion();window.__A9905_TEST__={build:A9905_BUILD,audit:baseAudit,prior:priorGates,maps:mapAudit,autoLong:autoLongProbe,supplyClock:autoSupplyClockProbe,offlineBoundary:offlineBoundaryProbe,boss:bossProbe,multiSlot:multiSlotProbe,offline2h:offline2hProbe,fullRegression,applyVersion,previous:window.__A9904_TEST__};
+})();
+
+
+// ===== Alpha99.6：單機正式版候選／整體玩家流程總驗收 =====
+// 本版只新增 QA／發布候選守門與版本資訊；不改玩法、數值、NPC、掉落、製作、技能、裝備、存檔 schema。
+// 目的：把登入／選角／創角 → 村莊/NPC → 狩獵/戰鬥 → 資產/存檔 → 地圖/BOSS/離線長玩串成最後候選驗收。
+const A9906_BUILD='B1.0 Alpha99.6';
+(()=>{
+  const safe=(fn,fallback=null)=>{try{return typeof fn==='function'?fn():fallback}catch(e){return{ok:false,error:String(e?.stack||e)}}};
+  const visible=el=>!!el&&!el.classList.contains('hidden')&&getComputedStyle(el).display!=='none';
+  function staticAudit(){
+    const issues=[],warnings=[];
+    try{
+      for(const k of ['__A9901_TEST__','__A9902_TEST__','__A9903_TEST__','__A9904_TEST__','__A9905_TEST__'])if(!window[k])issues.push('缺少前置守門 '+k);
+      for(const id of ['a46-login-screen','a46-login-go','a46-slot-screen','create-screen','create-go'])if(!document.getElementById(id))issues.push('缺少入口元件 #'+id);
+      const desktop=[...document.querySelectorAll('#right .navgrid>.navbtn')].map(x=>x.dataset.drawer);
+      const mobile=[...document.querySelectorAll('#mobile-nav>.mnav')].map(x=>x.dataset.drawer);
+      const want=['hunt','inventory','status','chat','settings'];
+      if(desktop.join('|')!==want.join('|'))issues.push('桌面主選單不是現行五鍵：'+desktop.join('|'));
+      if(mobile.join('|')!==want.join('|'))issues.push('手機主選單不是現行五鍵：'+mobile.join('|'));
+      if(document.querySelector('[data-drawer="trade"]'))issues.push('已移除的交易所入口再次出現');
+      if(typeof A46_OFFLINE_CAP_MS==='undefined'||Number(A46_OFFLINE_CAP_MS)!==86400000)issues.push('離線收益上限不是 24 小時');
+      const regen=safe(()=>window.__A9888_TEST__?.audit?.(),{});
+      if(regen?.regenEnabled!==true)issues.push('BOSS 回血正式總開關不是 ON');
+      if(Number(regen?.healBossCount||0)<1)warnings.push('未取得 BOSS 原始回血設定數量');
+      const dupIds=[...document.querySelectorAll('[id]')].reduce((m,e)=>(m[e.id]=(m[e.id]||0)+1,m),{});
+      const criticalDup=Object.entries(dupIds).filter(([id,n])=>n>1&&['a46-login-screen','a46-slot-screen','create-screen','mobile-nav','right','drawer','village-action'].includes(id));
+      if(criticalDup.length)issues.push('關鍵 UI id 重複：'+criticalDup.map(x=>x.join('×')).join(','));
+      if(document.documentElement.scrollWidth>innerWidth+2)warnings.push('目前 viewport 有水平溢出 '+document.documentElement.scrollWidth+'/'+innerWidth);
+      const missingDrop=['變種亞力安','邪惡思克巴','火焰之靈魂(藍)'].filter(n=>{
+        try{const m=Object.entries(DATA.mobs||{}).find(([id,x])=>x?.n===n);return !!m&&!Array.isArray(DATA.drops?.[m[0]])}catch(e){return false}
+      });
+      if(missingDrop.length)warnings.push('仍有待來源確認的怪物掉落：'+missingDrop.join('、'));
+      return{ok:issues.length===0,build:A9906_BUILD,issues,warnings,desktop,mobile,offlineCap:typeof A46_OFFLINE_CAP_MS==='undefined'?null:A46_OFFLINE_CAP_MS,bossRegen:{enabled:regen?.regenEnabled,healBossCount:regen?.healBossCount},viewport:{innerWidth,scrollWidth:document.documentElement.scrollWidth}};
+    }catch(e){return{ok:false,build:A9906_BUILD,issues:['Alpha99.6 static audit 例外：'+String(e?.stack||e)],warnings}}
+  }
+  function entryFlowProbe(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null;
+    const snap=state?(typeof a74Clone==='function'?a74Clone(state):JSON.parse(JSON.stringify(state))):null;
+    const active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0;
+    const out={ok:false,steps:[],issues:[]};const add=(name,ok,detail={})=>{out.steps.push({name,ok:!!ok,detail});if(!ok)out.issues.push(name)};
+    try{
+      // 建立完全隔離的空角色槽環境，測完完整還原 localStorage / state。
+      for(let i=1;i<=4;i++)try{localStorage.removeItem(a46SlotKey(i))}catch(e){}
+      try{localStorage.removeItem(SAVE_KEY)}catch(e){}
+      state=null;a46ActiveSlot=0;a46PendingSlot=0;a46InstallScreens();
+      a46ShowLogin();add('登入頁可顯示',visible(document.getElementById('a46-login-screen'))&&!!document.getElementById('a46-login-go'));
+      document.getElementById('a46-login-go')?.click();add('登入後進入四角色槽',visible(document.getElementById('a46-slot-screen'))&&document.querySelectorAll('#a46-slot-grid .a46-slot').length===4,{slots:document.querySelectorAll('#a46-slot-grid .a46-slot').length});
+      const createBtn=document.querySelector('[data-a46-create="1"]');createBtn?.click();
+      add('角色槽可進創角',visible(document.getElementById('create-screen')));
+      add('創角 8 職業/性別卡',document.querySelectorAll('#create-portraits .a9819-class-card').length===8,{count:document.querySelectorAll('#create-portraits .a9819-class-card').length});
+      add('創角 6 能力列',document.querySelectorAll('#alloc .a9819-stat-card').length===6,{count:document.querySelectorAll('#alloc .a9819-stat-card').length});
+      // 完成初始 8 點；使用既有 buildCreate/finishCreate，不另造創角捷徑。
+      const pts=Math.max(0,Number(create?.pts||0));if(pts){create.stats.str=Number(create.stats.str||0)+pts;create.pts=0;buildCreate()}
+      const ni=document.getElementById('create-name');if(ni)ni.value='A9906-RC';finishCreate();
+      add('建立角色並進入遊戲',!!state&&state.player?.name==='A9906-RC'&&Number(a46ActiveSlot)===1,{name:state?.player?.name,slot:a46ActiveSlot});
+      a46ShowSlots();add('返回角色選擇後角色存在',visible(document.getElementById('a46-slot-screen'))&&!!a46ReadSlot(1));
+      const entered=a46EnterSlot(1);add('角色槽可重新進入',entered===true&&state?.player?.name==='A9906-RC',{entered,name:state?.player?.name});
+      // 進遊戲後五個主入口需能產生 drawer，不驗證歷史視覺像素。
+      const drawers={};for(const d of ['hunt','inventory','status','chat','settings']){try{openDrawer(d);drawers[d]=typeof drawerHtml(d)==='string'&&drawerHtml(d).length>10}catch(e){drawers[d]=false}}
+      add('五個主入口可開啟',Object.values(drawers).every(Boolean),drawers);
+      out.ok=out.steps.every(x=>x.ok);
+    }catch(e){out.error=String(e?.stack||e);out.ok=false}
+    finally{
+      try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage)}catch(e){out.restoreStorageError=String(e);out.ok=false}
+      try{a46ActiveSlot=active;a46PendingSlot=pending;if(snap){state=snap;derive();render()}else{state=null;a46ShowLogin()}}catch(e){out.restoreStateError=String(e);out.ok=false}
+    }
+    return out;
+  }
+  async function isolatedGates(){
+    const rows=[];const add=(name,r)=>rows.push({name,ok:r?.ok===true,issues:r?.issues||[],detail:r});
+    let r;
+    try{r=await window.__A9901_TEST__?.probe?.()}catch(e){r={ok:false,issues:[String(e?.stack||e)]}}add('Lv50+ 能力點',r);
+    add('NPC 現行規則',safe(()=>window.__A9902_TEST__?.audit?.(),{}));
+    add('戰鬥/怪物/掉落/技能',safe(()=>window.__A9903_TEST__?.audit?.(),{}));
+    add('資產/存檔基礎',safe(()=>window.__A9904_TEST__?.audit?.(),{}));
+    add('地圖/BOSS/離線長玩基礎',safe(()=>window.__A9905_TEST__?.audit?.(),{}));
+    return{ok:rows.every(x=>x.ok),rows};
+  }
+  async function fullRegression(){
+    const issues=[];
+    // 入口 E2E 必須先跑；Alpha99.5 長玩／多角色 probe 會暫時建立角色槽與時間軸，若先跑會污染後續創角驗收。
+    const entry=entryFlowProbe();if(!entry.ok)issues.push('登入／選角／創角／重新登入整體流程未通過');
+    const base=await window.__A9905_TEST__?.fullRegression?.();if(base?.ok!==true)issues.push('Alpha99.5 完整基線未通過');
+    const own=staticAudit();if(!own.ok)issues.push(...own.issues);
+    const gates=await isolatedGates();if(!gates.ok)issues.push('Alpha99.1～99.5 現行守門有未通過項目');
+    let logClick;try{logClick=await window.__A9887_TEST__?.clickAudit?.()}catch(e){logClick={ok:false,error:String(e?.stack||e)}}if(logClick?.ok!==true)issues.push('戰鬥日誌怪物點擊掉落表未通過');
+    let asset=safe(()=>window.__A9904_TEST__?.runtime?.(),{});if(asset?.ok!==true)issues.push('裝備／倉庫／製作／存檔 runtime 未通過');
+    applyVersion();return{ok:issues.length===0,build:A9906_BUILD,issues,base:{ok:base?.ok===true},own,entry,gates,logClick:{ok:logClick?.ok===true,linked:logClick?.linked,total:logClick?.total},asset:{ok:asset?.ok===true,issues:asset?.issues||[]}};
+  }
+  function releaseCandidateStatus(){
+    const a=staticAudit(),blockers=[...a.issues],warnings=[...a.warnings];
+    if(safe(()=>window.__A9888_TEST__?.regenEnabled?.(),null)!==true)blockers.push('BOSS 回血正式開關沒有恢復 ON');
+    return{ok:blockers.length===0,build:A9906_BUILD,stage:'single-player-release-candidate',blockers,warnings};
+  }
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9906_BUILD}catch(e){document.title='樓梯口天堂 · '+A9906_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9906_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.6：單機正式版候選整體流程總驗收；串接登入／創角／NPC／戰鬥／資產／BOSS／離線與存檔守門。本版不改玩法。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.6｜單機正式版候選整體流程總驗收｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9906_BUILD+'</b><p>單機正式版候選：把登入／四角色槽／創角、NPC、狩獵戰鬥、掉落技能、裝備製作倉庫、自動功能、世界王、24h 離線與存檔串成發布前總驗收。</p><p>目前仍維持 BOSS 回血測試總開關 OFF，原始回血值沒有刪除；正式封版前會恢復 ON 後再跑最後一次 release regression。</p><small>本版只有 QA／發布候選守門與版本資訊；沒有修改既有玩法、數值、NPC、掉落、技能、裝備、製作、離線公式或存檔 schema。</small>';
+  }
+  // 舊 Alpha98.60 入口 wrapper 會在切換登入/選角/創角時重套舊版號；
+  // 候選版只在入口完成後重新同步當前版本資訊，不更動流程本身。
+  const showLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=showLoginBase.apply(this,arguments);applyVersion();return r};
+  const showSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=showSlotsBase.apply(this,arguments);applyVersion();return r};
+  const openCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=openCreateBase.apply(this,arguments);applyVersion();return r};
+  const enterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=enterSlotBase.apply(this,arguments);applyVersion();return r};
+  const installScreensBase=a46InstallScreens;a46InstallScreens=function(){const r=installScreensBase.apply(this,arguments);applyVersion();return r};
+  const renderBase=render;render=function(){const r=renderBase.apply(this,arguments);applyVersion();return r};
+  const initBase=init;init=function(){const r=initBase.apply(this,arguments);setTimeout(applyVersion,0);return r};
+  applyVersion();window.__A9906_TEST__={build:A9906_BUILD,audit:staticAudit,entry:entryFlowProbe,gates:isolatedGates,fullRegression,releaseCandidate:releaseCandidateStatus,applyVersion,previous:window.__A9905_TEST__};
+})();
+
+
+// ===== Alpha99.7：BOSS 回血恢復／單機正式封版最終 Release Regression =====
+// 既有內容唯一玩法變更：把 Alpha98.88 測試用 BOSS 回血總開關由 OFF 恢復 ON。
+// 不修改 DATA.worldBosses 任何 healPer5s 原始值；其餘新增內容皆為正式封版 QA／版本同步。
+const A9907_BUILD='B1.0 Alpha99.7';
+(()=>{
+  const safe=(fn,fallback=null)=>{try{return typeof fn==='function'?fn():fallback}catch(e){return{ok:false,error:String(e?.stack||e)}}};
+  function regenReleaseProbe(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null;
+    const snap=state?(typeof a74Clone==='function'?a74Clone(state):JSON.parse(JSON.stringify(state))):null;
+    const active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0;
+    const rows=[],issues=[];
+    try{
+      if(!state&&typeof a76TestReset==='function')a76TestReset('knight',60);
+      const entries=Object.entries(DATA.worldBosses||{}).filter(([id,c])=>Number(c?.healPer5s||0)>0);
+      for(const [id,c] of entries){
+        const oldBoss=state?.boss?JSON.parse(JSON.stringify(state.boss)):{};
+        const oldA57=state?.a57?JSON.parse(JSON.stringify(state.a57)):null;
+        try{
+          // 傲慢 10F/20F 世界王有正式門禁；Release Probe 必須先給合法樓層授權，
+          // 否則 Alpha83 的防旁路守門會在 render 時把它切回一般世界王，造成假 FAIL。
+          const towerFloor=(id==='wb_pride_jenis'?10:(id==='wb_pride_phantom'?20:0));
+          if(towerFloor){state.a57=(state.a57&&typeof state.a57==='object')?state.a57:{};state.a57.prideBossRoomFloor=towerFloor}
+          state.boss=state.boss||{};state.boss.id=id;state.boss.active=true;state.boss.fighting=true;
+          const max=a43BossMaxHp(c),want=Math.max(1,Number(c.healPer5s||0));
+          state.boss.hp=Math.max(1,max-want);const before=state.boss.hp,got=a43BossHeal(),after=state.boss.hp;
+          const ok=got>0&&after>before&&after<=max;
+          rows.push({id,name:a43BossName(id),healPer5s:Number(c.healPer5s||0),before,after,got,max,towerFloor,ok});
+          if(!ok)issues.push((a43BossName(id)||id)+' 回血失敗');
+        }finally{state.boss=oldBoss;if(oldA57===null)delete state.a57;else state.a57=oldA57}
+      }
+      if(A9888_BOSS_REGEN_ENABLED!==true)issues.push('BOSS 回血總開關不是 ON');
+      if(!entries.length)issues.push('沒有可測試的 healPer5s BOSS');
+      let ui='';try{ui=a43BossDrawer()}catch(e){}
+      if(ui.includes('回血：測試暫停')||ui.includes('BOSS 回血測試已暫停'))issues.push('世界王 UI 仍殘留回血暫停提示');
+      return{ok:issues.length===0,build:A9907_BUILD,total:entries.length,passed:rows.filter(x=>x.ok).length,dataKept:entries.every(([id,c])=>Number(c.healPer5s||0)>0),rows,issues};
+    }catch(e){return{ok:false,build:A9907_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows,issues:[...issues,String(e?.stack||e)]}}
+    finally{
+      try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}
+    }
+  }
+  function releaseAudit(){
+    const issues=[],warnings=[];
+    const regen=safe(()=>window.__A9888_TEST__?.audit?.(),{});
+    if(A9888_BOSS_REGEN_ENABLED!==true||regen?.regenEnabled!==true)issues.push('BOSS 回血總開關沒有正式恢復 ON');
+    if(regen?.dataKept!==true||Number(regen?.healBossCount||0)<1)issues.push('BOSS 原始回血資料沒有完整保留');
+    if(document.querySelector('[data-drawer="trade"]'))issues.push('已移除交易所入口再次出現');
+    const desktop=[...document.querySelectorAll('#right .navgrid>.navbtn')].map(x=>x.dataset.drawer),mobile=[...document.querySelectorAll('#mobile-nav>.mnav')].map(x=>x.dataset.drawer),want=['hunt','inventory','status','chat','settings'];
+    if(desktop.join('|')!==want.join('|'))issues.push('桌面主選單不是現行五鍵');
+    if(mobile.join('|')!==want.join('|'))issues.push('手機主選單不是現行五鍵');
+    if(typeof A46_OFFLINE_CAP_MS==='undefined'||Number(A46_OFFLINE_CAP_MS)!==86400000)issues.push('離線收益上限不是 24 小時');
+    const missingDrop=['變種亞力安','邪惡思克巴','火焰之靈魂(藍)'].filter(n=>{try{const m=Object.entries(DATA.mobs||{}).find(([id,x])=>x?.n===n);return !!m&&!Array.isArray(DATA.drops?.[m[0]])}catch(e){return false}});
+    if(missingDrop.length)warnings.push('仍待可靠來源的怪物掉落：'+missingDrop.join('、'));
+    return{ok:issues.length===0,build:A9907_BUILD,issues,warnings,bossRegen:{enabled:regen?.regenEnabled,healBossCount:Number(regen?.healBossCount||0),dataKept:regen?.dataKept===true},desktop,mobile,offlineCapMs:typeof A46_OFFLINE_CAP_MS==='undefined'?null:A46_OFFLINE_CAP_MS};
+  }
+  async function fullRegression(){
+    const issues=[];
+    // 既有 Alpha99.0～99.6 的 BOSS 狀態 QA 已在本檔同步成正式 ON，其餘規則完全沿用原守門。
+    let base={ok:false,error:'not-run'};try{base=await window.__A9906_TEST__?.fullRegression?.()}catch(e){base={ok:false,error:String(e?.stack||e)}}
+    if(base?.ok!==true)issues.push('Alpha99.6 完整候選回歸未通過');
+    const own=releaseAudit();if(!own.ok)issues.push(...own.issues);
+    const regen=regenReleaseProbe();if(!regen.ok)issues.push('BOSS 實際定時回血 Release Probe 未通過');
+    let click={ok:false};try{click=await window.__A9887_TEST__?.clickAudit?.()}catch(e){click={ok:false,error:String(e?.stack||e)}}if(click?.ok!==true)issues.push('戰鬥日誌怪物點擊掉落表未通過');
+    const asset=safe(()=>window.__A9904_TEST__?.runtime?.(),{});if(asset?.ok!==true)issues.push('資產／製作／倉庫／存檔 runtime 未通過');
+    applyVersion();return{ok:issues.length===0,build:A9907_BUILD,stage:'single-player-final-release-regression',issues,base:{ok:base?.ok===true},own,regen,logClick:{ok:click?.ok===true},asset:{ok:asset?.ok===true,issues:asset?.issues||[]}};
+  }
+  function releaseStatus(){
+    const a=releaseAudit(),blockers=[...a.issues],warnings=[...a.warnings];
+    return{ok:blockers.length===0,build:A9907_BUILD,stage:'single-player-final-release-regression',blockers,warnings,bossRegen:a.bossRegen};
+  }
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9907_BUILD}catch(e){document.title='樓梯口天堂 · '+A9907_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9907_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.7：恢復 BOSS 原始定時回血，執行單機正式封版最終 Release Regression。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.7｜BOSS回血恢復｜單機正式封版回歸｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9907_BUILD+'</b><p>正式封版回歸：Alpha98.88 測試期間關閉的 BOSS 定時回血已恢復 ON，所有原始 healPer5s 數值維持原資料。</p><p>Alpha99.0～99.6 的現行回歸守門同步改以「正式回血 ON」判定，再重跑登入／NPC／戰鬥／掉落技能／資產存檔／地圖 BOSS／自動戰鬥／離線長玩。</p><small>本版唯一玩法變更是恢復既有 BOSS 回血總開關；其餘只有 QA 與版本資訊。</small>';
+  }
+  // Alpha99.6 已處理舊入口 wrapper；最終版再在入口完成後同步 99.7 版本資訊。
+  const showLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=showLoginBase.apply(this,arguments);applyVersion();return r};
+  const showSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=showSlotsBase.apply(this,arguments);applyVersion();return r};
+  const openCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=openCreateBase.apply(this,arguments);applyVersion();return r};
+  const enterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=enterSlotBase.apply(this,arguments);applyVersion();return r};
+  const renderBase=render;render=function(){const r=renderBase.apply(this,arguments);applyVersion();return r};
+  const initBase=init;init=function(){const r=initBase.apply(this,arguments);setTimeout(applyVersion,0);return r};
+  applyVersion();window.__A9907_TEST__={build:A9907_BUILD,audit:releaseAudit,regen:regenReleaseProbe,fullRegression,releaseStatus,applyVersion,previous:window.__A9906_TEST__};
+})();
+
+
+// ===== Alpha99.8：掉落來源封存／資料完整性守門 =====
+// 只新增來源封存 QA 與版本資訊；不修改怪物、掉落、玩法、數值或存檔規則。
+const A9908_BUILD='B1.0 Alpha99.8';
+(()=>{
+  const A9908_UNRESOLVED=[
+    {id:'pride_arian',name:'變種亞力安'},
+    {id:'pride_succubus',name:'邪惡思克巴'},
+    {id:'pride_flamesoul_b',name:'火焰之靈魂(藍)'}
+  ];
+  const A9908_RESEARCH={
+    checkedAt:'2026-09-16',
+    sourcePriority:['新阿肥公開資料','舊阿肥公開資料','其他公開天堂資料交叉驗證'],
+    newAfei:{repo:'zxc518zxc/zxc518zxc.github.io',result:'未找到三隻完全同名且可直接採用的掉落表'},
+    oldAfei:{repo:'toudhue/my-web',result:'怪物掉落圖鑑未找到三隻完全同名掉落表'},
+    crossCheck:{result:'僅找到相近怪／同系列或其他版本資料；不足以覆蓋阿肥掉落規則'},
+    policy:'查不到就不猜；不得用同系列怪物、近似譯名或其他私服資料自動補表。'
+  };
+  const a9908Clone=v=>{try{return JSON.parse(JSON.stringify(v))}catch(e){return v}};
+  function a9908SourceAudit(){
+    const issues=[],rows=[];
+    for(const rec of A9908_UNRESOLVED){
+      const mob=DATA?.mobs?.[rec.id];
+      const direct=DATA?.drops?.[rec.id];
+      const byName=DATA?.dropsByMobName?.[rec.name];
+      const directCount=Array.isArray(direct)?direct.length:0;
+      const nameCount=Array.isArray(byName)?byName.length:0;
+      if(!mob)issues.push('缺少怪物資料：'+rec.name+' ('+rec.id+')');
+      else if(mob.n!==rec.name)issues.push('怪物 ID/名稱對應改變：'+rec.id+' → '+String(mob.n));
+      if(directCount>0||nameCount>0)issues.push('未經可靠來源確認卻出現掉落表：'+rec.name);
+      rows.push({id:rec.id,name:rec.name,mobExists:!!mob,directDropCount:directCount,nameDropCount:nameCount,status:(mob&&directCount===0&&nameCount===0)?'source-unresolved-protected':'check-required'});
+    }
+    const expected=A9908_UNRESOLVED.map(x=>x.name).slice().sort();
+    let legacyUnresolved=[];
+    try{
+      const r=typeof a9878DropAudit==='function'?a9878DropAudit():null;
+      legacyUnresolved=(r?.unresolved||[]).map(x=>x?.name).filter(Boolean).sort();
+      if(legacyUnresolved.length&&JSON.stringify(legacyUnresolved)!==JSON.stringify(expected))issues.push('Alpha98.78 未解清單漂移：'+legacyUnresolved.join('、'));
+    }catch(e){issues.push('無法驗證 Alpha98.78 未解清單：'+String(e?.message||e))}
+    return{ok:issues.length===0,build:A9908_BUILD,issues,rows,expectedUnresolved:expected,legacyUnresolved,research:a9908Clone(A9908_RESEARCH)};
+  }
+  function a9908StaticAudit(){
+    const issues=[],warnings=[];
+    const source=a9908SourceAudit();if(!source.ok)issues.push(...source.issues);
+    let regen={};try{regen=window.__A9888_TEST__?.audit?.()||{}}catch(e){}
+    if(regen?.regenEnabled!==true)issues.push('BOSS 回血正式總開關不是 ON');
+    if(document.querySelector('[data-drawer="trade"]'))issues.push('已移除交易所入口再次出現');
+    if(typeof A46_OFFLINE_CAP_MS==='undefined'||Number(A46_OFFLINE_CAP_MS)!==86400000)issues.push('離線收益上限不是 24 小時');
+    warnings.push('已知外部資料缺口 3 隻：'+A9908_UNRESOLVED.map(x=>x.name).join('、')+'；目前刻意維持無掉落表，避免推測資料污染正式版。');
+    return{ok:issues.length===0,build:A9908_BUILD,issues,warnings,source,bossRegen:{enabled:regen?.regenEnabled,healBossCount:regen?.healBossCount},offlineCapMs:typeof A46_OFFLINE_CAP_MS==='undefined'?null:A46_OFFLINE_CAP_MS};
+  }
+  async function a9908FullRegression(){
+    const issues=[];let base={ok:false,error:'not-run'};
+    try{base=await window.__A9907_TEST__?.fullRegression?.()}catch(e){base={ok:false,error:String(e?.stack||e)}}
+    if(base?.ok!==true)issues.push('Alpha99.7 Release Regression 未通過');
+    const own=a9908StaticAudit();if(!own.ok)issues.push(...own.issues);
+    a9908ApplyVersion();
+    return{ok:issues.length===0,build:A9908_BUILD,stage:'drop-source-freeze-and-integrity-guard',issues,base:{ok:base?.ok===true},own};
+  }
+  function a9908ReleaseStatus(){
+    const own=a9908StaticAudit();let previous={ok:false};
+    try{previous=window.__A9907_TEST__?.releaseStatus?.()||{ok:false}}catch(e){}
+    return{ok:previous.ok===true&&own.ok,build:A9908_BUILD,gameplayReleaseReady:previous.ok===true&&own.ok,dropDataComplete:false,knownExternalDataGaps:A9908_UNRESOLVED.map(x=>x.name),policy:A9908_RESEARCH.policy,issues:own.issues,warnings:own.warnings};
+  }
+  function a9908ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9908_BUILD}catch(e){document.title='樓梯口天堂 · '+A9908_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9908_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.8：封存未確認掉落來源，禁止以同系列怪物或其他版本資料推測補表；正式回歸規則維持不變。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.8｜掉落來源封存｜資料完整性守門｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9908_BUILD+'</b><p>資料完整性封存：變種亞力安、邪惡思克巴、火焰之靈魂(藍) 目前仍沒有足夠可靠的新／舊阿肥掉落來源，因此正式維持「無掉落表」，不以同系列怪物或其他版本私服資料猜測補值。</p><p>BOSS 回血維持正式 ON；Alpha99.7 Release Regression 與既有玩法、數值、NPC、技能、製作、存檔規則不變。</p><small>本版只有新增來源封存 QA 與版本資訊；沒有修改既有遊戲內容。</small>';
+  }
+  const a9908ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9908ShowLoginBase.apply(this,arguments);a9908ApplyVersion();return r};
+  const a9908ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9908ShowSlotsBase.apply(this,arguments);a9908ApplyVersion();return r};
+  const a9908OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9908OpenCreateBase.apply(this,arguments);a9908ApplyVersion();return r};
+  const a9908EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9908EnterSlotBase.apply(this,arguments);a9908ApplyVersion();return r};
+  const a9908RenderBase=render;render=function(){const r=a9908RenderBase.apply(this,arguments);a9908ApplyVersion();return r};
+  const a9908InitBase=init;init=function(){const r=a9908InitBase.apply(this,arguments);setTimeout(a9908ApplyVersion,0);return r};
+  a9908ApplyVersion();
+  window.__A9908_TEST__={build:A9908_BUILD,audit:a9908StaticAudit,sourceAudit:a9908SourceAudit,fullRegression:a9908FullRegression,releaseStatus:a9908ReleaseStatus,research:a9908Clone(A9908_RESEARCH),unresolved:a9908Clone(A9908_UNRESOLVED),applyVersion:a9908ApplyVersion,previous:window.__A9907_TEST__};
+})();
+
+
+// ===== Alpha99.9：手機背景超省電掛機 =====
+// 目標：手機瀏覽器切到背景時，保留既有「背景=離線掛機」收益流程，
+// 但停止前景 requestAnimationFrame、DOM 動態更新與音訊，最大限度降低背景 CPU / GPU 負載。
+// 不改戰鬥、掉落、技能、NPC、製作、BOSS、24h 離線收益公式或存檔 schema。
+const A9909_BUILD='B1.0 Alpha99.9';
+(()=>{
+  const A9909_POWER={
+    active:false,enteredAt:0,lastDurationMs:0,sleepCount:0,wakeCount:0,
+    rafCanceled:0,deferredWake:false,lastReason:'',lastWakeReason:'',audioSuspended:false
+  };
+  function a9909MobileLike(){
+    try{if(typeof a977IsMobileLike==='function')return !!a977IsMobileLike()}catch(e){}
+    const ua=String(navigator?.userAgent||'');
+    if(/Android|iPhone|iPad|iPod|Mobile/i.test(ua))return true;
+    try{return !!matchMedia?.('(pointer: coarse)')?.matches&&Math.min(Number(innerWidth||9999),Number(innerHeight||9999))<=900}catch(e){return false}
+  }
+  function a9909InstallStyle(){
+    if(document.getElementById('a9909-power-style'))return;
+    const st=document.createElement('style');st.id='a9909-power-style';
+    st.textContent='html.a9909-bg-sleep *,html.a9909-bg-sleep *::before,html.a9909-bg-sleep *::after{animation-play-state:paused!important}';
+    document.head.appendChild(st);
+  }
+  function a9909SuspendAudio(){
+    let any=false;
+    try{if(typeof a5StopSynthBgm==='function'){a5StopSynthBgm();any=true}}catch(e){}
+    try{if(typeof a5FileBgm!=='undefined'&&a5FileBgm&&!a5FileBgm.paused){a5FileBgm.pause();any=true}}catch(e){}
+    try{if(typeof a4Bgm!=='undefined'&&a4Bgm&&!a4Bgm.paused){a4Bgm.pause();any=true}}catch(e){}
+    try{if(typeof a5Ctx!=='undefined'&&a5Ctx&&a5Ctx.state==='running'){a5Ctx.suspend().catch(()=>{});any=true}}catch(e){}
+    A9909_POWER.audioSuspended=any;return any;
+  }
+  function a9909ResumeAudio(){
+    try{if(typeof a5Ctx!=='undefined'&&a5Ctx&&a5Ctx.state==='suspended')a5Ctx.resume().catch(()=>{})}catch(e){}
+    try{if(typeof updateBgm==='function'&&typeof audioPref!=='undefined'&&audioPref?.bgm)setTimeout(()=>{try{updateBgm()}catch(e){}},0)}catch(e){}
+    A9909_POWER.audioSuspended=false;
+  }
+  function a9909Sleep(reason='visibility-hidden',force=false){
+    if(A9909_POWER.active)return{ok:true,already:true,...A9909_POWER};
+    if(!force&&!a9909MobileLike())return{ok:true,ignored:true,desktop:true};
+    a9909InstallStyle();
+    A9909_POWER.active=true;A9909_POWER.enteredAt=Date.now();A9909_POWER.sleepCount++;A9909_POWER.lastReason=String(reason);A9909_POWER.deferredWake=false;
+    try{document.documentElement.classList.add('a9909-bg-sleep')}catch(e){}
+    try{if(typeof raf!=='undefined'&&raf){cancelAnimationFrame(raf);raf=0;A9909_POWER.rafCanceled++}}catch(e){}
+    a9909SuspendAudio();
+    return{ok:true,active:true,raf:typeof raf==='undefined'?null:raf,audioSuspended:A9909_POWER.audioSuspended};
+  }
+  function a9909Wake(reason='visibility-visible',force=false){
+    if(!A9909_POWER.active)return{ok:true,already:true,active:false};
+    if(!force&&state?.a45?.offlineSettling){A9909_POWER.deferredWake=true;A9909_POWER.lastWakeReason=String(reason);return{ok:true,pending:true,offlineSettling:true}}
+    const now=Date.now();A9909_POWER.lastDurationMs=Math.max(0,now-Number(A9909_POWER.enteredAt||now));A9909_POWER.active=false;A9909_POWER.wakeCount++;A9909_POWER.deferredWake=false;A9909_POWER.lastWakeReason=String(reason);
+    try{document.documentElement.classList.remove('a9909-bg-sleep')}catch(e){}
+    try{last=performance.now();if(typeof raf!=='undefined'&&!raf)raf=requestAnimationFrame(loop)}catch(e){}
+    a9909ResumeAudio();
+    try{if(state){renderHUDDynamic();renderBattleDynamic();renderSummary()}}catch(e){}
+    return{ok:true,active:false,durationMs:A9909_POWER.lastDurationMs,raf:typeof raf==='undefined'?null:raf};
+  }
+
+  // 最後一層主畫面時鐘守門：即使瀏覽器仍送來殘留 frame，也不再繼續排下一幀。
+  const a9909LoopBase=loop;
+  loop=function(now){if(A9909_POWER.active){try{raf=0}catch(e){}return}return a9909LoopBase(now)};
+
+  // 背景時防止其他低頻事件誤觸大量 DOM 動態重畫；離線 replay 本身已有 quiet runtime，不受影響。
+  const a9909HudBase=renderHUDDynamic;
+  renderHUDDynamic=function(){if(A9909_POWER.active)return;return a9909HudBase.apply(this,arguments)};
+  const a9909BattleBase=renderBattleDynamic;
+  renderBattleDynamic=function(){if(A9909_POWER.active)return;return a9909BattleBase.apply(this,arguments)};
+
+  // 若長時間離線結算仍在分批補跑，保持畫面時鐘與音訊休眠；結算完成才重新喚醒。
+  const a9909FinishOfflineBase=a45FinishOffline;
+  a45FinishOffline=function(){
+    const r=a9909FinishOfflineBase.apply(this,arguments);
+    if(A9909_POWER.active&&A9909_POWER.deferredWake)setTimeout(()=>a9909Wake('offline-settlement-finished',true),0);
+    return r;
+  };
+
+  function a9909OnVisibility(){
+    try{
+      if(document.visibilityState==='hidden')a9909Sleep('visibility-hidden',false);
+      else if(document.visibilityState==='visible'&&A9909_POWER.active)a9909Wake('visibility-visible',false);
+    }catch(e){}
+  }
+  document.addEventListener('visibilitychange',a9909OnVisibility,{passive:true});
+  window.addEventListener('pagehide',()=>{try{a9909Sleep('pagehide',false)}catch(e){}},{passive:true});
+  window.addEventListener('pageshow',()=>{try{if(document.visibilityState==='visible'&&A9909_POWER.active)a9909Wake('pageshow',false)}catch(e){}},{passive:true});
+
+  function a9909Audit(){
+    const issues=[],warnings=[];
+    if(typeof requestAnimationFrame!=='function'||typeof cancelAnimationFrame!=='function')issues.push('瀏覽器缺少 requestAnimationFrame 控制');
+    if(typeof a36PauseForBackground!=='function'||typeof a36ResumeFromBackground!=='function')issues.push('既有背景離線掛機流程不存在');
+    if(typeof A46_OFFLINE_CAP_MS==='undefined'||Number(A46_OFFLINE_CAP_MS)!==86400000)issues.push('離線收益上限不是 24 小時');
+    let regen={};try{regen=window.__A9888_TEST__?.audit?.()||{}}catch(e){}
+    if(regen?.regenEnabled!==true)issues.push('BOSS 回血正式狀態不是 ON');
+    warnings.push('省電模式只負責停止背景即時畫面／音訊；收益仍由既有離線 replay 結算，沒有新增或修改收益公式。');
+    return{ok:issues.length===0,build:A9909_BUILD,issues,warnings,mobileLike:a9909MobileLike(),power:{...A9909_POWER},offlineCapMs:typeof A46_OFFLINE_CAP_MS==='undefined'?null:A46_OFFLINE_CAP_MS,bossRegenEnabled:regen?.regenEnabled===true};
+  }
+  function a9909PowerProbe(){
+    const beforeRaf=typeof raf==='undefined'?null:raf,before={...A9909_POWER};
+    const s=a9909Sleep('qa-probe',true),during={active:A9909_POWER.active,raf:typeof raf==='undefined'?null:raf,htmlPaused:document.documentElement.classList.contains('a9909-bg-sleep')};
+    const w=a9909Wake('qa-probe',true),after={active:A9909_POWER.active,raf:typeof raf==='undefined'?null:raf,htmlPaused:document.documentElement.classList.contains('a9909-bg-sleep')};
+    const ok=s?.ok===true&&during.active===true&&during.raf===0&&during.htmlPaused===true&&w?.ok===true&&after.active===false&&!after.htmlPaused&&!!after.raf;
+    return{ok,build:A9909_BUILD,beforeRaf,before,during,after,sleep:s,wake:w};
+  }
+  async function a9909FullRegression(){
+    const issues=[];let base={ok:false,error:'not-run'};
+    try{base=await window.__A9908_TEST__?.fullRegression?.()}catch(e){base={ok:false,error:String(e?.stack||e)}}
+    if(base?.ok!==true)issues.push('Alpha99.8 完整回歸未通過');
+    const own=a9909Audit();if(!own.ok)issues.push(...own.issues);
+    const power=a9909PowerProbe();if(!power.ok)issues.push('背景超省電 runtime probe 未通過');
+    a9909ApplyVersion();
+    return{ok:issues.length===0,build:A9909_BUILD,stage:'mobile-background-ultra-low-power',issues,base:{ok:base?.ok===true},own,power};
+  }
+  function a9909ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9909_BUILD}catch(e){document.title='樓梯口天堂 · '+A9909_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9909_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.9：手機切到背景時停止高頻畫面時鐘與音訊，保留既有離線掛機結算，最大限度降低背景耗電與發熱。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.9｜手機背景超省電掛機｜24h離線規則不變｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9909_BUILD+'</b><p>手機背景超省電：切換到其他 App／背景分頁後，停止前景 requestAnimationFrame、戰鬥畫面 DOM 重畫、CSS 動畫與遊戲音訊；返回時再恢復。</p><p>背景掛網收益仍沿用既有 100ms 實戰 replay 與 24 小時上限，不改 EXP、金幣、掉落、死亡、自動補給或戰鬥公式。</p><small>本版改的是背景執行策略，不是遊戲數值。桌機既有切分頁規則不變。</small>';
+  }
+  const a9909ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9909ShowLoginBase.apply(this,arguments);a9909ApplyVersion();return r};
+  const a9909ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9909ShowSlotsBase.apply(this,arguments);a9909ApplyVersion();return r};
+  const a9909OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9909OpenCreateBase.apply(this,arguments);a9909ApplyVersion();return r};
+  const a9909EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9909EnterSlotBase.apply(this,arguments);a9909ApplyVersion();return r};
+  const a9909RenderBase=render;render=function(){const r=a9909RenderBase.apply(this,arguments);a9909ApplyVersion();return r};
+  const a9909InitBase=init;init=function(){const r=a9909InitBase.apply(this,arguments);setTimeout(()=>{a9909ApplyVersion();if(document.visibilityState==='hidden')a9909OnVisibility()},0);return r};
+  a9909InstallStyle();a9909ApplyVersion();
+  window.__A9909_TEST__={build:A9909_BUILD,audit:a9909Audit,powerProbe:a9909PowerProbe,sleep:(reason='manual')=>a9909Sleep(reason,true),wake:(reason='manual')=>a9909Wake(reason,true),fullRegression:a9909FullRegression,power:()=>({...A9909_POWER}),applyVersion:a9909ApplyVersion,previous:window.__A9908_TEST__};
+})();
+
+
+// ===== Alpha99.10：手機背景低喚醒省電 =====
+// Alpha99.9 已停止 RAF / 動態 DOM / CSS 動畫 / 音訊。
+// 本層再停止既有長駐 setInterval，避免背景頁仍每 100ms / 1s / 30s / 60s 喚醒 JavaScript。
+// 回到前景後只恢復原本存在的計時器；角色選擇大廳回復用時間差補算，不改 3 秒 10% 規則。
+// 不改戰鬥、掉落、技能、NPC、製作、BOSS、離線收益公式或存檔 schema。
+const A9910_BUILD='B1.0 Alpha99.10';
+(()=>{
+  const A9910_TIMER={
+    sleeping:false,enteredAt:0,lastDurationMs:0,sleepCount:0,wakeCount:0,
+    paused:{heartbeat:false,slotRefresh:false,settleUi:false,lobby:false,idle:false,reconnect:false},
+    lastPauseReason:'',lastWakeReason:'',lobbyLastTickAt:0,lobbyBaseAt:0,lobbyCatchupTicks:0,
+    blockedStarts:{slotRefresh:0,settleUi:0,lobby:0,idle:0,reconnect:0}
+  };
+  function a9910MobileLike(){
+    try{if(typeof a977IsMobileLike==='function')return !!a977IsMobileLike()}catch(e){}
+    const ua=String(navigator?.userAgent||'');if(/Android|iPhone|iPad|iPod|Mobile/i.test(ua))return true;
+    try{return !!matchMedia?.('(pointer: coarse)')?.matches&&Math.min(Number(innerWidth||9999),Number(innerHeight||9999))<=900}catch(e){return false}
+  }
+  function a9910Power(){try{return window.__A9909_TEST__?.power?.()||{}}catch(e){return{}}}
+  function a9910ShouldSleep(){return a9910MobileLike()&&(document.visibilityState==='hidden'||a9910Power().active===true||A9910_TIMER.sleeping)}
+
+  // 包住會建立長駐 interval 的入口，確保背景期間不會被其他事件偷偷重開。
+  const a9910SlotStartBase=a48StartSlotRefresh;
+  a48StartSlotRefresh=function(){if(a9910ShouldSleep()){A9910_TIMER.paused.slotRefresh=true;A9910_TIMER.blockedStarts.slotRefresh++;return false}return a9910SlotStartBase.apply(this,arguments)};
+  const a9910SettleStartBase=a48StartSettleUi;
+  a48StartSettleUi=function(){if(a9910ShouldSleep()){A9910_TIMER.paused.settleUi=true;A9910_TIMER.blockedStarts.settleUi++;return false}return a9910SettleStartBase.apply(this,arguments)};
+  const a9910LobbyStartBase=a978StartLobbyRecovery;
+  a978StartLobbyRecovery=function(){if(a9910ShouldSleep()){A9910_TIMER.paused.lobby=true;A9910_TIMER.blockedStarts.lobby++;return false}return a9910LobbyStartBase.apply(this,arguments)};
+  const a9910IdleInstallBase=a978InstallIdleWatcher;
+  a978InstallIdleWatcher=function(){if(a9910ShouldSleep()){A9910_TIMER.paused.idle=true;A9910_TIMER.blockedStarts.idle++;return false}return a9910IdleInstallBase.apply(this,arguments)};
+  const a9910ReconnectStartBase=a9711StartTimer;
+  a9711StartTimer=function(){if(a9910ShouldSleep()){A9910_TIMER.paused.reconnect=true;A9910_TIMER.blockedStarts.reconnect++;return false}return a9910ReconnectStartBase.apply(this,arguments)};
+
+  // 記住最後一次真正的大廳回復 tick，背景回來時以目前 3 秒規則做時間差補算。
+  const a9910LobbyTickBase=a978LobbyTick;
+  a978LobbyTick=function(){const r=a9910LobbyTickBase.apply(this,arguments);if(r?.ok)A9910_TIMER.lobbyLastTickAt=Date.now();return r};
+
+  function a9910PauseTimers(reason='visibility-hidden',force=false){
+    if(A9910_TIMER.sleeping)return{ok:true,already:true,timers:a9910TimerSnapshot()};
+    if(!force&&!a9910MobileLike())return{ok:true,ignored:true,desktop:true};
+    const now=Date.now();A9910_TIMER.sleeping=true;A9910_TIMER.enteredAt=now;A9910_TIMER.sleepCount++;A9910_TIMER.lastPauseReason=String(reason);
+    const p=A9910_TIMER.paused={heartbeat:false,slotRefresh:false,settleUi:false,lobby:false,idle:false,reconnect:false};
+    try{if(A32_HEARTBEAT_TIMER){p.heartbeat=true;clearInterval(A32_HEARTBEAT_TIMER);A32_HEARTBEAT_TIMER=0}}catch(e){}
+    try{if(A48_SLOT_REFRESH_TIMER){p.slotRefresh=true;clearInterval(A48_SLOT_REFRESH_TIMER);A48_SLOT_REFRESH_TIMER=0}}catch(e){}
+    try{if(A48_SETTLE_UI_TIMER){p.settleUi=true;clearInterval(A48_SETTLE_UI_TIMER);A48_SETTLE_UI_TIMER=0}}catch(e){}
+    try{if(A978_LOBBY_TIMER){p.lobby=true;A9910_TIMER.lobbyBaseAt=Number(A9910_TIMER.lobbyLastTickAt||now);clearInterval(A978_LOBBY_TIMER);A978_LOBBY_TIMER=0}}catch(e){}
+    try{if(A978_IDLE_TIMER){p.idle=true;clearInterval(A978_IDLE_TIMER);A978_IDLE_TIMER=0}}catch(e){}
+    try{if(A9711_TIMER){p.reconnect=true;clearInterval(A9711_TIMER);A9711_TIMER=0}}catch(e){}
+    return{ok:true,active:true,paused:{...p},timers:a9910TimerSnapshot()};
+  }
+
+  function a9910CatchupLobby(now=Date.now()){
+    if(!A9910_TIMER.paused.lobby)return{ok:true,ticks:0,reason:'not-paused'};
+    const gate=document.getElementById('a46-slot-screen');if(!gate||gate.classList.contains('hidden'))return{ok:true,ticks:0,reason:'slot-screen-not-visible'};
+    const ms=Math.max(1,Number(typeof A9844_LOBBY_TICK_MS!=='undefined'?A9844_LOBBY_TICK_MS:A978_LOBBY_TICK_MS)||3000);
+    const base=Math.max(0,Number(A9910_TIMER.lobbyBaseAt||A9910_TIMER.enteredAt||now));
+    const ticks=Math.max(0,Math.floor((Number(now)-base)/ms));if(!ticks)return{ok:true,ticks:0,reason:'under-one-tick'};
+    let changed=0,rows=0;
+    try{
+      for(let slot=1;slot<=A46_SLOT_COUNT;slot++){
+        const s=a978SlotLobbyState(slot);if(!s?.a978?.inLobby||!s.player)continue;rows++;
+        const p=s.player,maxHp=Math.max(1,Number(p.maxHp||p.hp||1)),maxMp=Math.max(0,Number(p.maxMp||p.mp||0));
+        const beforeHp=Math.max(0,Number(p.hp||0)),beforeMp=Math.max(0,Number(p.mp||0));
+        const hpStep=Math.max(1,Math.ceil(maxHp*A978_LOBBY_HEAL_RATIO)),mpStep=maxMp>0?Math.max(1,Math.ceil(maxMp*A978_LOBBY_HEAL_RATIO)):0;
+        p.hp=Math.min(maxHp,beforeHp+hpStep*ticks);p.mp=Math.min(maxMp,beforeMp+mpStep*ticks);
+        s.dead=p.hp<=0?!!s.dead:false;s.a978.lobbyTicks=Number(s.a978.lobbyTicks||0)+ticks;s.a978.lastLobbyTickAt=Number(now);
+        if(p.hp!==beforeHp||p.mp!==beforeMp)changed++;
+        a46WriteSlot(slot,s);
+      }
+      if(changed)try{a46RenderSlots()}catch(e){}
+      A9910_TIMER.lobbyCatchupTicks+=ticks;A9910_TIMER.lobbyLastTickAt=Number(now);
+      return{ok:true,ticks,rows,changed};
+    }catch(e){return{ok:false,ticks,error:String(e?.message||e)}}
+  }
+
+  function a9910ResumeTimers(reason='visibility-visible',force=false){
+    if(!A9910_TIMER.sleeping)return{ok:true,already:true,timers:a9910TimerSnapshot()};
+    if(!force&&document.visibilityState!=='visible')return{ok:true,pending:true,reason:'not-visible'};
+    if(!force&&a9910Power().active===true)return{ok:true,pending:true,reason:'alpha99.9-still-sleeping'};
+    const now=Date.now(),p={...A9910_TIMER.paused};
+    A9910_TIMER.lastDurationMs=Math.max(0,now-Number(A9910_TIMER.enteredAt||now));A9910_TIMER.sleeping=false;A9910_TIMER.wakeCount++;A9910_TIMER.lastWakeReason=String(reason);
+    let lobbyCatchup={ok:true,ticks:0};if(p.lobby)lobbyCatchup=a9910CatchupLobby(now);
+    try{if(p.heartbeat&&!A32_HEARTBEAT_TIMER)A32_HEARTBEAT_TIMER=setInterval(a32Heartbeat,30000)}catch(e){}
+    try{if(p.slotRefresh&&!A48_SLOT_REFRESH_TIMER)a9910SlotStartBase()}catch(e){}
+    try{if(p.settleUi&&!A48_SETTLE_UI_TIMER)a9910SettleStartBase()}catch(e){}
+    try{if(p.lobby&&!A978_LOBBY_TIMER)a9910LobbyStartBase()}catch(e){}
+    try{if(p.idle&&!A978_IDLE_TIMER){a9910IdleInstallBase();if(state)try{a978TouchActivity(now)}catch(e){}}}catch(e){}
+    try{if(p.reconnect&&!A9711_TIMER){const m=a9711ReadMarker?.();if(m?.active&&!m.timedOut){a9711Tick(now);if(a9711ReadMarker?.()?.active)a9910ReconnectStartBase()}}}catch(e){}
+    A9910_TIMER.paused={heartbeat:false,slotRefresh:false,settleUi:false,lobby:false,idle:false,reconnect:false};
+    return{ok:true,active:false,durationMs:A9910_TIMER.lastDurationMs,lobbyCatchup,timers:a9910TimerSnapshot()};
+  }
+
+  function a9910TimerSnapshot(){
+    const val=x=>!!x;return{
+      heartbeat:val(typeof A32_HEARTBEAT_TIMER!=='undefined'&&A32_HEARTBEAT_TIMER),
+      slotRefresh:val(typeof A48_SLOT_REFRESH_TIMER!=='undefined'&&A48_SLOT_REFRESH_TIMER),
+      settleUi:val(typeof A48_SETTLE_UI_TIMER!=='undefined'&&A48_SETTLE_UI_TIMER),
+      lobby:val(typeof A978_LOBBY_TIMER!=='undefined'&&A978_LOBBY_TIMER),
+      idle:val(typeof A978_IDLE_TIMER!=='undefined'&&A978_IDLE_TIMER),
+      reconnect:val(typeof A9711_TIMER!=='undefined'&&A9711_TIMER)
+    }
+  }
+  function a9910KnownActiveCount(){return Object.values(a9910TimerSnapshot()).filter(Boolean).length}
+  function a9910OnVisibility(){
+    try{
+      if(document.visibilityState==='hidden')a9910PauseTimers('visibility-hidden',false);
+      else if(document.visibilityState==='visible')setTimeout(()=>a9910ResumeTimers('visibility-visible',false),0);
+    }catch(e){}
+  }
+  document.addEventListener('visibilitychange',a9910OnVisibility,{passive:true});
+  window.addEventListener('pagehide',()=>{try{a9910PauseTimers('pagehide',false)}catch(e){}},{passive:true});
+  window.addEventListener('pageshow',()=>{try{setTimeout(()=>a9910ResumeTimers('pageshow',false),0)}catch(e){}},{passive:true});
+
+  // Alpha99.9 若因離線 replay 延後喚醒，等 replay 完成後再恢復 interval。
+  const a9910FinishOfflineBase=a45FinishOffline;
+  a45FinishOffline=function(){const r=a9910FinishOfflineBase.apply(this,arguments);setTimeout(()=>{try{a9910ResumeTimers('offline-settlement-finished',false)}catch(e){}},0);return r};
+
+  function a9910Audit(){
+    const issues=[],warnings=[],timers=a9910TimerSnapshot();
+    if(typeof window.__A9909_TEST__?.power!=='function')issues.push('Alpha99.9 省電核心不存在');
+    if(typeof A48_SLOT_REFRESH_TIMER==='undefined'||typeof A48_SETTLE_UI_TIMER==='undefined')issues.push('Alpha48 長駐計時器不存在');
+    if(typeof A32_HEARTBEAT_TIMER==='undefined'||typeof A978_IDLE_TIMER==='undefined')issues.push('長時間穩定計時器不存在');
+    if(typeof A46_OFFLINE_CAP_MS==='undefined'||Number(A46_OFFLINE_CAP_MS)!==86400000)issues.push('離線收益上限不是 24 小時');
+    if(A9910_TIMER.sleeping&&Object.values(timers).some(Boolean))issues.push('背景休眠時仍有已知長駐 interval 存活');
+    warnings.push('本版只停止背景長駐計時器；短暫特效用的一次性 timeout/短 interval 會自行結束，不改其遊戲效果。');
+    return{ok:issues.length===0,build:A9910_BUILD,issues,warnings,mobileLike:a9910MobileLike(),sleeping:A9910_TIMER.sleeping,timers,knownActiveCount:a9910KnownActiveCount(),state:{...A9910_TIMER,paused:{...A9910_TIMER.paused},blockedStarts:{...A9910_TIMER.blockedStarts}},offlineCapMs:typeof A46_OFFLINE_CAP_MS==='undefined'?null:A46_OFFLINE_CAP_MS};
+  }
+  function a9910TimerProbe(){
+    const before=a9910TimerSnapshot(),beforeCount=a9910KnownActiveCount();
+    try{window.__A9909_TEST__?.sleep?.('a9910-timer-probe')}catch(e){}
+    const s=a9910PauseTimers('qa-probe',true),during=a9910TimerSnapshot(),duringCount=a9910KnownActiveCount();
+    try{window.__A9909_TEST__?.wake?.('a9910-timer-probe')}catch(e){}
+    const w=a9910ResumeTimers('qa-probe',true),after=a9910TimerSnapshot(),afterCount=a9910KnownActiveCount();
+    const pausedAll=Object.values(during).every(v=>!v),restored=Object.entries(before).every(([k,v])=>!v||after[k]===true);
+    return{ok:s?.ok===true&&pausedAll&&w?.ok===true&&restored,build:A9910_BUILD,before,beforeCount,during,duringCount,after,afterCount,sleep:s,wake:w};
+  }
+  async function a9910FullRegression(){
+    const issues=[];let base={ok:false,error:'not-run'};
+    try{base=await window.__A9909_TEST__?.fullRegression?.()}catch(e){base={ok:false,error:String(e?.stack||e)}}
+    if(base?.ok!==true)issues.push('Alpha99.9 完整回歸未通過');
+    const own=a9910Audit();if(!own.ok)issues.push(...own.issues);
+    const timer=a9910TimerProbe();if(!timer.ok)issues.push('背景長駐計時器休眠／恢復 probe 未通過');
+    a9910ApplyVersion();return{ok:issues.length===0,build:A9910_BUILD,stage:'mobile-background-low-wakeup',issues,base:{ok:base?.ok===true},own,timer};
+  }
+  function a9910ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9910_BUILD}catch(e){document.title='樓梯口天堂 · '+A9910_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9910_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.10：手機背景除了停止畫面與音訊，也停止 100ms／1s／30s／60s 等長駐計時器，回前景再安全恢復。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.10｜手機背景低喚醒省電｜24h離線規則不變｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9910_BUILD+'</b><p>手機背景低喚醒：延續 Alpha99.9 停止 RAF／DOM 動態重畫／CSS 動畫／音訊，再停止角色頁 1 秒刷新、離線結算 100ms UI、30 秒心跳、60 秒閒置檢查與斷線倒數等長駐 interval。</p><p>回前景只恢復原本存在的計時器；角色選擇的大廳 HP/MP 回復依既有 3 秒 10% 規則用時間差補算。</p><small>戰鬥、掉落、技能、NPC、製作、BOSS、24 小時離線收益與存檔 schema 都沒有改。</small>';
+  }
+  const a9910ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9910ShowLoginBase.apply(this,arguments);a9910ApplyVersion();return r};
+  const a9910ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9910ShowSlotsBase.apply(this,arguments);a9910ApplyVersion();return r};
+  const a9910OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9910OpenCreateBase.apply(this,arguments);a9910ApplyVersion();return r};
+  const a9910EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9910EnterSlotBase.apply(this,arguments);a9910ApplyVersion();return r};
+  const a9910RenderBase=render;render=function(){const r=a9910RenderBase.apply(this,arguments);a9910ApplyVersion();return r};
+  const a9910InitBase=init;init=function(){const r=a9910InitBase.apply(this,arguments);setTimeout(()=>{a9910ApplyVersion();if(document.visibilityState==='hidden')a9910PauseTimers('init-hidden',false)},0);return r};
+  a9910ApplyVersion();
+  if(document.visibilityState==='hidden')a9910PauseTimers('patch-loaded-hidden',false);
+  window.__A9910_TEST__={build:A9910_BUILD,audit:a9910Audit,timerProbe:a9910TimerProbe,fullRegression:a9910FullRegression,pause:(r='manual')=>a9910PauseTimers(r,true),resume:(r='manual')=>a9910ResumeTimers(r,true),timers:a9910TimerSnapshot,state:()=>({...A9910_TIMER,paused:{...A9910_TIMER.paused},blockedStarts:{...A9910_TIMER.blockedStarts}}),applyVersion:a9910ApplyVersion,previous:window.__A9909_TEST__};
+})();
+
+
+// ===== Alpha99.11：底部經驗值條回歸修正 =====
+// 原因：Alpha98.46 參考 UI 樣式曾用 !important 隱藏 #expbar，手機基礎 media query 也同時隱藏它。
+// 本層只恢復既有 EXP DOM 與既有 renderHUDDynamic 更新，不改 EXP 公式、升級規則、戰鬥、掉落或存檔。
+const A9911_BUILD='B1.0 Alpha99.11';
+(()=>{
+  const A9911_STYLE_ID='a9911-expbar-style';
+  const A9911_CSS=`
+body.a9846-reference-ui #expbar{
+  display:block!important;
+  position:relative!important;
+  min-width:0!important;
+  overflow:hidden!important;
+  box-sizing:border-box!important;
+  background:#080604!important;
+  border:1px solid #5f491f!important;
+  border-radius:3px!important;
+  box-shadow:inset 0 0 5px rgba(0,0,0,.85)!important;
+  z-index:34!important;
+}
+body.a9846-reference-ui #expbar .expfill{
+  display:block!important;
+  height:100%!important;
+  min-width:0!important;
+  background:linear-gradient(90deg,#76500a,#d89d1b 58%,#f5c451)!important;
+}
+body.a9846-reference-ui #expbar .exptxt{
+  display:grid!important;
+  place-items:center!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  padding:0 5px!important;
+  font-size:10px!important;
+  line-height:14px!important;
+  color:#fff3c8!important;
+  text-shadow:0 1px 2px #000!important;
+  pointer-events:none!important;
+}
+/* 單機版守門：舊 mobile nav DOM 若殘留交易所，不得再次露出。 */
+body.a9846-reference-ui #mobile-nav .mnav[data-drawer="trade"],
+body.a9846-reference-ui #right .navbtn[data-drawer="trade"]{display:none!important}
+@media(min-width:901px){
+  body.a9846-reference-ui #app{
+    grid-template-rows:minmax(0,57fr) minmax(0,40.5fr) 16px!important;
+  }
+  body.a9846-reference-ui #expbar{
+    grid-column:1/4!important;
+    grid-row:3!important;
+    height:16px!important;
+    min-height:16px!important;
+  }
+  body.a9846-reference-ui #right{grid-row:1/3!important}
+}
+@media(max-width:900px){
+  body.a9846-reference-ui #expbar{
+    display:block!important;
+    flex:0 0 16px!important;
+    width:100%!important;
+    height:16px!important;
+    min-height:16px!important;
+    order:20!important;
+    border-left:0!important;
+    border-right:0!important;
+    border-radius:0!important;
+  }
+  body.a9846-reference-ui #mobile-nav{order:30!important}
+  body.a9846-reference-ui #expbar .exptxt{font-size:9px!important;line-height:14px!important}
+}
+`;
+  function a9911InstallStyle(){
+    let st=document.getElementById(A9911_STYLE_ID);
+    if(!st){st=document.createElement('style');st.id=A9911_STYLE_ID;document.head.appendChild(st)}
+    if(st.textContent!==A9911_CSS)st.textContent=A9911_CSS;
+    return st;
+  }
+  function a9911ApplyVersion(){
+    a9911InstallStyle();
+    try{document.title=A41_BRAND+' · '+A9911_BUILD}catch(e){document.title='樓梯口天堂 · '+A9911_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9911_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.11：找回介面底部 EXP 經驗值條；並修正手機單機版殘留交易所按鈕，恢復 5 鍵導覽。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.11｜底部經驗值條回歸修正｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9911_BUILD+'</b><p>修正介面回歸：底部 EXP 經驗值條重新顯示，桌面與手機皆可看到目前 EXP／升級需求／百分比。</p><p>巡檢時另發現手機單機導覽舊交易所按鈕又露出，已重新隱藏並恢復 5 鍵單排。</p><p>EXP 沿用原本 expNeed 與 renderHUDDynamic；沒有新增第二套 EXP 計算。</p><small>本版只修 UI 顯示與版面，不改 EXP、戰鬥、掉落、NPC、製作、BOSS、離線收益或存檔 schema。</small>';
+  }
+  function a9911BarSnapshot(){
+    const bar=document.getElementById('expbar'),fill=document.getElementById('exp-fill'),txt=document.getElementById('exp-txt');
+    const cs=bar?getComputedStyle(bar):null,fr=fill?fill.getBoundingClientRect():null,br=bar?bar.getBoundingClientRect():null;
+    return{
+      exists:!!bar,visible:!!bar&&cs.display!=='none'&&cs.visibility!=='hidden'&&Number(cs.opacity||1)>0&&br.width>0&&br.height>0,
+      display:cs?.display||'',width:br?.width||0,height:br?.height||0,
+      text:String(txt?.textContent||''),fillStyle:String(fill?.style?.width||''),fillWidth:fr?.width||0,
+      barWidth:br?.width||0
+    };
+  }
+  function a9911Audit(){
+    const issues=[],warnings=[],bar=a9911BarSnapshot();
+    const visibleNav=[...document.querySelectorAll(innerWidth<=900?'#mobile-nav .mnav[data-drawer]':'#right .navbtn[data-drawer]')].filter(x=>getComputedStyle(x).display!=='none').map(x=>String(x.dataset.drawer||''));
+    if(!document.getElementById(A9911_STYLE_ID))issues.push('Alpha99.11 EXP 樣式未安裝');
+    if(!bar.exists)issues.push('缺少既有 #expbar DOM');
+    if(bar.exists&&!bar.visible)issues.push('底部 EXP 條仍不可見');
+    if(bar.visible&&(bar.height<12||bar.height>22))issues.push('EXP 條高度異常：'+bar.height);
+    if(!document.getElementById('exp-fill')||!document.getElementById('exp-txt'))issues.push('EXP fill/text DOM 缺失');
+    if(typeof expNeed!=='function')issues.push('既有 expNeed 不存在');
+    if(typeof renderHUDDynamic!=='function')issues.push('既有 renderHUDDynamic 不存在');
+    const wantNav=['hunt','inventory','status','chat','settings'];
+    if(JSON.stringify(visibleNav)!==JSON.stringify(wantNav))issues.push('單機導覽不是 5 鍵：'+visibleNav.join(','));
+    if(bar.text&&!/^EXP\s/.test(bar.text))warnings.push('目前 EXP 文字格式不是 EXP 開頭：'+bar.text);
+    return{ok:issues.length===0,build:A9911_BUILD,issues,warnings,bar,visibleNav,viewport:{width:innerWidth,height:innerHeight},mobile:innerWidth<=900};
+  }
+  function a9911UpdateProbe(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null;
+    const snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const before=a9911BarSnapshot();let first=null,second=null,error='';
+    try{
+      a76TestReset('knight',1);state.player.lv=10;const need=expNeed(10);state.player.exp=Math.floor(need*.25);derive();renderHUDDynamic();first=a9911BarSnapshot();
+      state.player.exp=Math.floor(need*.75);renderHUDDynamic();second=a9911BarSnapshot();
+      const pct1=parseFloat(first.fillStyle||'0')/100,pct2=parseFloat(second.fillStyle||'0')/100;
+      const textOk=/^EXP\s/.test(first.text)&&/^EXP\s/.test(second.text)&&first.text!==second.text;
+      const fillOk=pct1>.20&&pct1<.30&&pct2>.70&&pct2<.80&&pct2>pct1;
+      return{ok:first.visible&&second.visible&&textOk&&fillOk,build:A9911_BUILD,before,first,second,pct1,pct2,textOk,fillOk,error};
+    }catch(e){error=String(e?.stack||e);return{ok:false,build:A9911_BUILD,before,first,second,error}}
+    finally{
+      try{if(storage) a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}
+      a9911ApplyVersion();
+    }
+  }
+  async function a9911FullRegression(){
+    const issues=[];let base={ok:false,error:'not-run'};
+    try{base=await window.__A9910_TEST__?.fullRegression?.()}catch(e){base={ok:false,error:String(e?.stack||e)}}
+    if(base?.ok!==true)issues.push('Alpha99.10 完整回歸未通過');
+    const own=a9911Audit();if(!own.ok)issues.push(...own.issues);
+    const update=a9911UpdateProbe();if(!update.ok)issues.push('EXP 即時更新 probe 未通過');
+    a9911ApplyVersion();
+    return{ok:issues.length===0,build:A9911_BUILD,stage:'bottom-expbar-regression-fix',issues,base:{ok:base?.ok===true},own,update};
+  }
+  const a9911ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9911ShowLoginBase.apply(this,arguments);a9911ApplyVersion();return r};
+  const a9911ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9911ShowSlotsBase.apply(this,arguments);a9911ApplyVersion();return r};
+  const a9911OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9911OpenCreateBase.apply(this,arguments);a9911ApplyVersion();return r};
+  const a9911EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9911EnterSlotBase.apply(this,arguments);a9911ApplyVersion();return r};
+  const a9911RenderBase=render;render=function(){const r=a9911RenderBase.apply(this,arguments);a9911ApplyVersion();return r};
+  const a9911InitBase=init;init=function(){const r=a9911InitBase.apply(this,arguments);setTimeout(a9911ApplyVersion,0);return r};
+  a9911ApplyVersion();
+  window.__A9911_TEST__={build:A9911_BUILD,audit:a9911Audit,updateProbe:a9911UpdateProbe,fullRegression:a9911FullRegression,bar:a9911BarSnapshot,applyVersion:a9911ApplyVersion,previous:window.__A9910_TEST__};
 })();
 
 })();
