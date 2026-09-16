@@ -30924,6 +30924,726 @@ body.a9846-reference-ui #right .navbtn[data-drawer="trade"]{display:none!importa
   window.__A9911_TEST__={build:A9911_BUILD,audit:a9911Audit,updateProbe:a9911UpdateProbe,fullRegression:a9911FullRegression,bar:a9911BarSnapshot,applyVersion:a9911ApplyVersion,previous:window.__A9910_TEST__};
 })();
 
+
+// ===== Alpha99.12：雜貨商六卷軸 1 金幣 + 禁止回售 =====
+const A9912_BUILD='B1.0 Alpha99.12';
+(()=>{
+  const A9912_GROCERY_SCROLLS=Object.freeze([
+    'scroll_weapon_b',
+    'scroll_armor_b',
+    'new_item_bless_wpn',
+    'new_item_bless_arm',
+    'scroll_acc',
+    'new_item_bless_acc'
+  ]);
+  const A9912_GROCERY_SET=new Set(A9912_GROCERY_SCROLLS);
+
+  // 明確標記為不可販售；保留原本用途、交換與強化邏輯。
+  for(const id of A9912_GROCERY_SCROLLS){
+    if(DATA.items?.[id])DATA.items[id].noSell=true;
+  }
+
+  // 只擴充原本就有可用商品表的「雜貨商人」，不藉此解鎖來源鎖定中的 NPC。
+  const a9912ShopListBase=a7ShopList;
+  a7ShopList=function(npc){
+    const base=a9912ShopListBase.apply(this,arguments)||[];
+    if(!npc||String(npc.title||'')!=='雜貨商人'||!base.length)return base;
+    const out=[...base];
+    for(const id of A9912_GROCERY_SCROLLS)if(DATA.items?.[id]&&!out.includes(id))out.push(id);
+    return out;
+  };
+
+  // 六卷軸在雜貨商人購買時固定 1 金幣；不改它們原本資料價值欄位。
+  const a9912BundleBase=a7Bundle;
+  a7Bundle=function(id){
+    if(A9912_GROCERY_SET.has(String(id||'')))return {cnt:1,cost:1};
+    return a9912BundleBase.apply(this,arguments);
+  };
+
+  // 手動販賣與自動販賣都統一禁止。
+  const a9912SellableBase=a10Sellable;
+  a10Sellable=function(id){
+    if(A9912_GROCERY_SET.has(String(id||'')))return false;
+    return a9912SellableBase.apply(this,arguments);
+  };
+
+  function a9912ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9912_BUILD}catch(e){document.title='樓梯口天堂 · '+A9912_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9912_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.12：六種卷軸加入既有雜貨商人，購買價統一 1 金幣，並禁止手動／自動販賣。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.12｜雜貨商六卷軸 1 金幣與禁售｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9912_BUILD+'</b><p>雜貨商人新增：祝福的 對武器施法的卷軸、祝福的 對盔甲施法的卷軸、賦予武器祝福卷軸、賦予盔甲祝福卷軸、對飾品施法的卷軸、賦予飾品祝福卷軸。</p><p>以上六種卷軸購買價固定為 1 金幣，並禁止賣回商店，也不會出現在掛機自動販賣清單。</p><small>不改六種卷軸原本的強化／祝福／交換用途，不解鎖原本來源鎖定中的雜貨 NPC，存檔 schema 不變。</small>';
+  }
+
+  function a9912Audit(){
+    const issues=[],rows=[];
+    for(const id of A9912_GROCERY_SCROLLS){
+      const d=DATA.items?.[id],bundle=a7Bundle(id);
+      const row={id,name:d?.n||'',exists:!!d,cost:Number(bundle?.cost),cnt:Number(bundle?.cnt),noSell:!!d?.noSell};
+      rows.push(row);
+      if(!d)issues.push('缺少道具 '+id);
+      if(Number(bundle?.cost)!==1||Number(bundle?.cnt)!==1)issues.push(id+' 購買價不是 1 金幣');
+      if(!d?.noSell)issues.push(id+' 未標記 noSell');
+    }
+    const groceries=[];
+    for(const [townId,town] of Object.entries(DATA.towns||{}))for(const npc of (town?.npcs||[])){
+      if(String(npc?.title||'')!=='雜貨商人')continue;
+      const before=a9912ShopListBase(npc)||[],after=a7ShopList(npc)||[];
+      const active=before.length>0;
+      const hasAll=A9912_GROCERY_SCROLLS.every(id=>after.includes(id));
+      groceries.push({townId,npcId:npc.id,name:npc.n,active,beforeCount:before.length,afterCount:after.length,hasAll});
+      if(active&&!hasAll)issues.push(townId+'/'+npc.id+' 沒有完整加入六卷軸');
+      if(!active&&after.length!==0)issues.push(townId+'/'+npc.id+' 原本鎖定卻被 Alpha99.12 解鎖');
+    }
+    let sellChecks=[];
+    if(state){
+      const invSnap=JSON.parse(JSON.stringify(state.inventory||{}));
+      try{
+        for(const id of A9912_GROCERY_SCROLLS){state.inventory[id]=Math.max(1,Number(state.inventory[id]||0));sellChecks.push({id,sellable:a10Sellable(id),autoProtected:typeof a971AutoSellProtected==='function'?a971AutoSellProtected(id):'n/a'});if(a10Sellable(id))issues.push(id+' 仍可手動販賣')}
+      }finally{state.inventory=invSnap}
+    }
+    return{ok:issues.length===0,build:A9912_BUILD,issues,rows,groceries,sellChecks};
+  }
+
+  function a9912PurchaseProbe(){
+    if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null;
+    const snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const rows=[];let error='';
+    try{
+      a76TestReset('knight',1);state.player.gold=1000;
+      for(const id of A9912_GROCERY_SCROLLS){
+        const gold0=state.player.gold,count0=a8Count(id),ok=a10Buy(id,1),gold1=state.player.gold,count1=a8Count(id);
+        rows.push({id,ok,goldDelta:gold0-gold1,itemDelta:count1-count0,sellable:a10Sellable(id)});
+      }
+      return{ok:rows.every(r=>r.ok&&r.goldDelta===1&&r.itemDelta===1&&r.sellable===false),build:A9912_BUILD,rows,error};
+    }catch(e){error=String(e?.stack||e);return{ok:false,build:A9912_BUILD,rows,error}}
+    finally{
+      try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}
+      a9912ApplyVersion();
+    }
+  }
+
+  async function a9912FullRegression(){
+    const issues=[];let previous={ok:false,error:'not-run'};
+    try{previous=await window.__A9911_TEST__?.fullRegression?.()}catch(e){previous={ok:false,error:String(e?.stack||e)}}
+    if(previous?.ok!==true)issues.push('Alpha99.11 完整回歸未通過');
+    const own=a9912Audit();if(!own.ok)issues.push(...own.issues);
+    const purchase=a9912PurchaseProbe();if(!purchase.ok)issues.push('六卷軸 1 金幣購買／禁售 probe 未通過');
+    a9912ApplyVersion();
+    return{ok:issues.length===0,build:A9912_BUILD,stage:'grocery-six-scrolls-one-gold-nosell',issues,previous:{ok:previous?.ok===true},own,purchase};
+  }
+
+  const a9912ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9912ShowLoginBase.apply(this,arguments);a9912ApplyVersion();return r};
+  const a9912ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9912ShowSlotsBase.apply(this,arguments);a9912ApplyVersion();return r};
+  const a9912OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9912OpenCreateBase.apply(this,arguments);a9912ApplyVersion();return r};
+  const a9912EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9912EnterSlotBase.apply(this,arguments);a9912ApplyVersion();return r};
+  const a9912RenderBase=render;render=function(){const r=a9912RenderBase.apply(this,arguments);a9912ApplyVersion();return r};
+  a9912ApplyVersion();
+  window.__A9912_TEST__={build:A9912_BUILD,ids:[...A9912_GROCERY_SCROLLS],audit:a9912Audit,purchaseProbe:a9912PurchaseProbe,fullRegression:a9912FullRegression,applyVersion:a9912ApplyVersion,previous:window.__A9911_TEST__};
+})();
+
+// ===== Alpha99.13：背包裝備可直接強化 =====
+const A9913_BUILD='B1.0 Alpha99.13';
+(()=>{
+  function a9913Gear(id){const d=a8Item(id);return !!(d&&!d.isArrow&&['wpn','arm','acc'].includes(d.type))}
+  function a9913MetaArray(id){a16EnsureEnhanceState();const a=state?.gearInventoryMeta?.[id];return Array.isArray(a)?a:[]}
+  function a9913CleanMeta(id,m){return a16CleanGearMeta(id,(m&&typeof m==='object')?m:{})}
+  function a9913ResolveTarget(id,target={kind:'detail'}){
+    a16EnsureEnhanceState();
+    if(!a9913Gear(id)||a8Count(id)<1)return null;
+    const arr=a9913MetaArray(id),kind=String(target?.kind||'detail');
+    if(kind==='meta'){
+      const index=Math.floor(Number(target.index));
+      if(index>=0&&index<arr.length)return{kind:'meta',index,meta:a9913CleanMeta(id,arr[index])};
+      return null;
+    }
+    if(kind==='plain'){
+      if(a16PlainCount(id)>0)return{kind:'plain',index:-1,meta:a9913CleanMeta(id,{en:0,affix:{},seteff:false})};
+      return null;
+    }
+    if(arr.length)return{kind:'meta',index:arr.length-1,meta:a9913CleanMeta(id,arr[arr.length-1])};
+    if(a16PlainCount(id)>0)return{kind:'plain',index:-1,meta:a9913CleanMeta(id,{en:0,affix:{},seteff:false})};
+    return null;
+  }
+  function a9913WriteTarget(id,target,nextMeta){
+    a16EnsureEnhanceState();const clean=a9913CleanMeta(id,nextMeta),arr=a9913MetaArray(id);
+    if(target.kind==='meta'){
+      if(target.index<0||target.index>=arr.length)return false;
+      if(a16MetaSpecial(clean))arr[target.index]=clean;else arr.splice(target.index,1);
+      if(arr.length)state.gearInventoryMeta[id]=arr;else delete state.gearInventoryMeta[id];
+    }else{
+      if(a16MetaSpecial(clean))(state.gearInventoryMeta[id]||(state.gearInventoryMeta[id]=[])).push(clean);
+    }
+    a16SyncLegacyPools();return true;
+  }
+  function a9913RemoveTargetCopy(id,target){
+    a16EnsureEnhanceState();let backup=null;
+    if(target.kind==='meta'){
+      const arr=a9913MetaArray(id);if(target.index<0||target.index>=arr.length)return false;
+      backup=a9913CleanMeta(id,arr[target.index]);arr.splice(target.index,1);if(!arr.length)delete state.gearInventoryMeta[id];a16SyncLegacyPools();
+    }
+    const ok=a8Take(id,1);
+    if(!ok&&backup){(state.gearInventoryMeta[id]||(state.gearInventoryMeta[id]=[])).splice(Math.min(target.index,state.gearInventoryMeta[id].length),0,backup);a16SyncLegacyPools()}
+    return ok;
+  }
+  function a9913BagRiskText(scrollId,id,en){
+    const s=A16_SCROLLS[scrollId],d=a8Item(id);if(!s||!d)return'';
+    if(s.cursed)return en>0?'100% · 強化值 -1':'不可使用 · 已是 +0';
+    const p=a23EnhanceProfile(d,en,scrollId);if(p.blocked)return'不可強化 · '+p.reason;
+    let t=p.safe?'安定強化 · 成功 100%':('成功 '+a23Pct(p.succ)+'% · 維持 '+a23Pct(p.stay)+'% · 破壞 '+a23Pct(p.destroy)+'%');
+    if(s.blessed){const r=a23BlessRange(d,en);t+=' · 成功 +'+r.min+(r.max>r.min?'～'+r.max:'')}
+    return t;
+  }
+  function a9913InventoryCandidates(scrollId,onlyId=''){
+    a16EnsureEnhanceState();const s=A16_SCROLLS[scrollId];if(!s)return[];const out=[];
+    for(const [id,n0] of Object.entries(state?.inventory||{})){
+      if(onlyId&&id!==onlyId)continue;const n=Number(n0)||0,d=a8Item(id);if(n<1||!d||!a9913Gear(id)||d.type!==s.type||d.noEnh||a972IsLocked(id))continue;
+      const cap=a16CapFor(d),arr=a9913MetaArray(id),groups=new Map();
+      for(let i=0;i<arr.length;i++){
+        const meta=a9913CleanMeta(id,arr[i]),en=Number(meta.en||0);let eligible=false;
+        if(s.cursed)eligible=en>0;else{const p=a23EnhanceProfile(d,en,scrollId);eligible=!p.blocked&&en<cap}
+        if(!eligible)continue;
+        const key=JSON.stringify(meta);const g=groups.get(key);if(g){g.count++;g.index=i}else groups.set(key,{id,kind:'meta',index:i,meta,count:1});
+      }
+      for(const g of groups.values())out.push(g);
+      const plain=a16PlainCount(id);
+      if(plain>0&&!s.cursed){const p=a23EnhanceProfile(d,0,scrollId);if(!p.blocked&&0<cap)out.push({id,kind:'plain',index:-1,meta:a9913CleanMeta(id,{en:0,affix:{},seteff:false}),count:plain})}
+    }
+    return out;
+  }
+  function a9913Record(id,from,to,scrollId,result,p){
+    try{a23RecordEnhance(id,from,to,scrollId,result,p);if(state?.enhanceRules?.last)state.enhanceRules.last.location='inventory'}catch(e){}
+  }
+  function a9913EnhanceInventory(scrollId,id,target={kind:'detail'},opts={}){
+    a16EnsureEnhanceState();const s=A16_SCROLLS[scrollId],d=a8Item(id);
+    if(!s||!d||!a9913Gear(id)||d.type!==s.type||a8Count(scrollId)<1)return false;
+    if(d.noEnh){toast('此裝備不可強化');return false}
+    if(a972IsLocked(id)){toast('此裝備已鎖定，請先解鎖再強化。');return false}
+    const t=a9913ResolveTarget(id,target);if(!t){toast('背包找不到可強化的這件裝備');return false}
+    let en=Math.max(0,Number(t.meta.en||0)),cap=a16CapFor(d);
+    if(s.cursed){
+      if(en<=0){toast('已經是 +0');return false}
+      if(!a8Take(scrollId,1))return false;const before=en,en2=en-1,next={...t.meta,en:en2};a9913WriteTarget(id,t,next);a9913Record(id,before,en2,scrollId,'cursed-down',{succ:100,stay:0,destroy:0});
+      log('背包 '+a16GearName(id,en2,next.affix||{})+' 強化值下降 1。','gain');derive();save();render();if(opts.closeModal!==false)document.getElementById('a16-enhance-modal')?.classList.remove('open');return{ok:true,result:'cursed-down',from:before,to:en2};
+    }
+    if(en>=cap){toast('已達強化上限 +'+cap);return false}
+    const p=a23EnhanceProfile(d,en,scrollId);if(p.blocked){toast(p.reason);return false}
+    if(!p.safe&&opts.confirmUnsafe!==false){const msg='新阿肥現行機率：成功 '+a23Pct(p.succ)+'%／維持 '+a23Pct(p.stay)+'%／破壞 '+a23Pct(p.destroy)+'%。\n確定強化背包中的 '+a16GearName(id,en,t.meta.affix||{})+'？';if(!confirm(msg))return false}
+    if(!a8Take(scrollId,1))return false;
+    const before=en,roll=Math.random()*100;
+    if(roll<Number(p.succ||0)){
+      let add=1;if(s.blessed){const r=a23BlessRange(d,en);add=r.min+Math.floor(Math.random()*(r.max-r.min+1))}
+      const en2=Math.min(cap,en+add),next={...t.meta,en:en2};a9913WriteTarget(id,t,next);a9913Record(id,before,en2,scrollId,'success',p);
+      log('背包 '+a16GearName(id,en2,next.affix||{})+' 發出銀色光芒，強化成功'+(add>1?'（一次 +'+add+'）':'')+'。','gain');
+      derive();save();render();if(opts.closeModal!==false)document.getElementById('a16-enhance-modal')?.classList.remove('open');return{ok:true,result:'success',from:before,to:en2};
+    }
+    if(roll<Number(p.succ||0)+Number(p.stay||0)){
+      a9913Record(id,before,before,scrollId,'stay',p);log('背包 '+a16GearName(id,en,t.meta.affix||{})+' 發出光芒，但強化值維持不變。','gain');derive();save();render();if(opts.closeModal!==false)document.getElementById('a16-enhance-modal')?.classList.remove('open');return{ok:true,result:'stay',from:before,to:before};
+    }
+    if(!a9913RemoveTargetCopy(id,t)){toast('裝備破壞處理失敗');return false}
+    a9913Record(id,before,0,scrollId,'destroy',p);log('背包 '+a16GearName(id,en,t.meta.affix||{})+' 強烈發出銀色光芒後消失了。','bad');derive();save();render();if(opts.closeModal!==false)document.getElementById('a16-enhance-modal')?.classList.remove('open');return{ok:true,result:'destroy',from:before,to:null};
+  }
+  function a9913SafeEnhanceInventory(id){
+    const d=a8Item(id);if(!d||!a9913Gear(id)){toast('這不是可強化裝備');return false}
+    const scroll=a972EnhanceScrollFor(id);if(!scroll){toast('背包沒有可用的一般強化卷軸');return false}
+    const safe=Math.max(0,Number(d.safe||0));let changed=false,guard=30;
+    while(guard-->0){const t=a9913ResolveTarget(id,{kind:'detail'});if(!t)break;const en=Math.max(0,Number(t.meta.en||0));if(en>=safe)break;if(a8Count(scroll)<1)break;const r=a9913EnhanceInventory(scroll,id,{kind:'detail'},{closeModal:false,confirmUnsafe:false});if(!r||r.result==='destroy')break;changed=true}
+    if(!changed)toast(a8Count(scroll)<1?'強化卷軸不足':'目前已達安定值');return changed;
+  }
+
+  // 使用任何現有強化卷軸時，目標清單同時加入「背包裝備」。
+  const a9913OpenEnhanceBase=a16OpenEnhance;
+  a16OpenEnhance=function(scrollId){
+    const r=a9913OpenEnhanceBase.apply(this,arguments);if(!r)return r;
+    try{
+      const bag=a9913InventoryCandidates(scrollId),m=document.getElementById('a16-enhance-modal'),list=m?.querySelector('#a16-enh-list');if(!m||!list||!bag.length)return r;
+      const empty=list.querySelector('.a16-enh-empty');if(empty)empty.remove();
+      const rows=bag.map((x,idx)=>{const d=a8Item(x.id),en=Number(x.meta?.en||0),sum=a68MetaSummary? a68MetaSummary(x.id,x.meta,a68EquipTargets(x.id)[0]||''):'';const se=x.meta?.seteff?(' · '+x.meta.seteff):'';return '<button class="a16-enh-row" data-a9913-bag-target="'+idx+'"><span><b>背包：'+escapeHtml(a16GearName(x.id,en,x.meta?.affix||{}))+(x.count>1?' ×'+fmt(x.count):'')+'</b><small>安定 +'+Number(d.safe||0)+' · 上限 +'+a16CapFor(d)+(sum?' · '+escapeHtml(sum):'')+escapeHtml(se)+'</small></span><em>'+escapeHtml(a9913BagRiskText(scrollId,x.id,en))+'</em></button>'}).join('');
+      list.insertAdjacentHTML('beforeend','<div class="a9913-enh-section">背包裝備</div>'+rows);
+      list.querySelectorAll('[data-a9913-bag-target]').forEach(b=>b.onclick=()=>{const x=bag[Number(b.dataset.a9913BagTarget)];if(x)a9913EnhanceInventory(scrollId,x.id,{kind:x.kind,index:x.index})});
+    }catch(e){console.error('Alpha99.13 背包強化清單',e)}
+    return r;
+  };
+
+  // 背包物品詳情新增「強化」與「一鍵強化至安定」；裝備欄既有按鈕不動。
+  const a9913OpenItemBase=a68OpenItem;
+  a68OpenItem=function(id,slotCtx=''){
+    const r=a9913OpenItemBase.apply(this,arguments);
+    try{
+      const d=a8Item(id),m=document.getElementById('a68-item-modal');if(slotCtx||!m||!d||!a9913Gear(id)||d.noEnh||a8Count(id)<1)return r;
+      const actions=m.querySelector('#a68-modal-body .a972-detail-actions');if(!actions||actions.querySelector('[data-a9913-bag-enhance]'))return r;
+      const close=actions.querySelector('[data-a972-detail-close]');
+      const enhance=document.createElement('button');enhance.className='a972-detail-act enhance';enhance.dataset.a9913BagEnhance=id;enhance.textContent='強化（背包裝備）';
+      const safe=document.createElement('button');safe.className='a972-detail-act safe';safe.dataset.a9913BagSafe=id;safe.textContent='一鍵強化至安定 +'+Number(d.safe||0);
+      actions.insertBefore(enhance,close||null);actions.insertBefore(safe,close||null);
+      enhance.onclick=()=>{const scroll=a972EnhanceScrollFor(id);if(!scroll){toast('背包沒有可用的一般強化卷軸');return}const z=a9913EnhanceInventory(scroll,id,{kind:'detail'});if(z)a68OpenItem(id,'')};
+      safe.onclick=()=>{const z=a9913SafeEnhanceInventory(id);if(z)a68OpenItem(id,'')};
+    }catch(e){console.error('Alpha99.13 背包詳情強化',e)}
+    return r;
+  };
+
+  function a9913EnsureStyle(){if(document.getElementById('a9913-style'))return;const st=document.createElement('style');st.id='a9913-style';st.textContent='.a9913-enh-section{margin:10px 0 5px;padding:6px 8px;border-top:1px solid #5a4827;border-bottom:1px solid #3d301d;color:#f4c864;font-size:12px;font-weight:800;background:#130e09}';document.head.appendChild(st)}
+  function a9913ApplyVersion(){
+    a9913EnsureStyle();try{document.title=A41_BRAND+' · '+A9913_BUILD}catch(e){document.title='樓梯口天堂 · '+A9913_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9913_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.13：背包中的武器、防具、飾品可直接強化；使用強化卷軸時也會列出背包裝備。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.13｜背包裝備直接強化｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9913_BUILD+'</b><p>背包中的武器、防具與飾品現在可直接強化，不需要先裝備。</p><p>使用一般／祝福／詛咒強化卷軸時，強化目標清單也會同時列出符合規則的背包裝備。</p><small>沿用原本新阿肥強化機率、安定值、維持／破壞與祝福跳級規則；強化值會跟著實體裝備進出背包與裝備欄，存檔 schema 不變。</small>';
+  }
+  function a9913Audit(){
+    const issues=[];if(typeof a9913EnhanceInventory!=='function')issues.push('背包強化核心不存在');if(typeof a16OpenEnhance!=='function')issues.push('強化卷軸入口不存在');if(typeof a68OpenItem!=='function')issues.push('物品詳情入口不存在');
+    return{ok:issues.length===0,build:A9913_BUILD,issues,schema:state?.schema||'',inventoryMetaVersion:state?.gearMetaVersion||0};
+  }
+  function a9913Probe(){
+    if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;const rows=[];let error='';
+    try{
+      a76TestReset('knight',50);state.inventory={wpn_1:2,scroll_weapon:20,scroll_weapon_c:2};state.equipment={};state.equipEnhance={};state.gearInventoryMeta={};state.lockedItems={};a16EnsureEnhanceState();derive();
+      const c0=a8Count('wpn_1'),s0=a8Count('scroll_weapon'),r1=a9913EnhanceInventory('scroll_weapon','wpn_1',{kind:'plain'},{closeModal:false,confirmUnsafe:false});const m1=a9913MetaArray('wpn_1');rows.push({name:'背包 +0→+1',ok:!!r1&&r1.result==='success'&&a8Count('wpn_1')===c0&&a8Count('scroll_weapon')===s0-1&&Number(m1.at(-1)?.en)===1});
+      a8Equip('wpn_1');rows.push({name:'強化值跟著裝備',ok:state.equipment?.wpn==='wpn_1'&&a16EqEn('wpn')===1});a8Unequip('wpn');rows.push({name:'卸下後強化值回背包',ok:a8Count('wpn_1')===2&&a9913MetaArray('wpn_1').some(x=>Number(x.en)===1)});
+      const rc=a9913EnhanceInventory('scroll_weapon_c','wpn_1',{kind:'detail'},{closeModal:false,confirmUnsafe:false});rows.push({name:'背包詛咒卷可降階',ok:!!rc&&rc.result==='cursed-down'&&a9913MetaArray('wpn_1').every(x=>Number(x.en||0)!==1)});
+      state.inventory.arm_42=1;state.inventory.scroll_armor=5;const ra=a9913EnhanceInventory('scroll_armor','arm_42',{kind:'plain'},{closeModal:false,confirmUnsafe:false});rows.push({name:'防具可在背包強化',ok:!!ra&&ra.result==='success'&&a9913MetaArray('arm_42').some(x=>Number(x.en)===1)});
+      state.inventory.acc_118=1;state.inventory.scroll_acc=5;const oldRnd=Math.random;Math.random=()=>0;const racc=a9913EnhanceInventory('scroll_acc','acc_118',{kind:'plain'},{closeModal:false,confirmUnsafe:false});Math.random=oldRnd;rows.push({name:'飾品可在背包強化',ok:!!racc&&racc.result==='success'&&a9913MetaArray('acc_118').some(x=>Number(x.en)===1)});
+      state.gearInventoryMeta.wpn_1=[a9913CleanMeta('wpn_1',{en:6,affix:{},seteff:false})];a16SyncLegacyPools();const beforeDestroy=a8Count('wpn_1'),oldRnd2=Math.random;Math.random=()=>0.999999;const rd=a9913EnhanceInventory('scroll_weapon','wpn_1',{kind:'meta',index:0},{closeModal:false,confirmUnsafe:false});Math.random=oldRnd2;rows.push({name:'背包爆裝會刪除正確實體',ok:!!rd&&rd.result==='destroy'&&a8Count('wpn_1')===beforeDestroy-1&&!a9913MetaArray('wpn_1').length});
+      a68OpenItem('wpn_1','');rows.push({name:'背包詳情有強化按鈕',ok:!!document.querySelector('#a68-item-modal [data-a9913-bag-enhance]')&&!!document.querySelector('#a68-item-modal [data-a9913-bag-safe]')});document.getElementById('a68-item-modal')?.classList.remove('open');
+      a16OpenEnhance('scroll_weapon');rows.push({name:'卷軸目標含背包裝備',ok:document.querySelectorAll('#a16-enhance-modal [data-a9913-bag-target]').length>0});document.getElementById('a16-enhance-modal')?.classList.remove('open');
+      state.lockedItems.wpn_1=true;const sl=a8Count('scroll_weapon'),blocked=a9913EnhanceInventory('scroll_weapon','wpn_1',{kind:'plain'},{closeModal:false,confirmUnsafe:false});rows.push({name:'鎖定裝備不可背包強化',ok:blocked===false&&a8Count('scroll_weapon')===sl});
+      return{ok:rows.every(x=>x.ok),build:A9913_BUILD,rows,error};
+    }catch(e){error=String(e?.stack||e);return{ok:false,build:A9913_BUILD,rows,error}}
+    finally{try{document.getElementById('a16-enhance-modal')?.classList.remove('open');document.getElementById('a68-item-modal')?.classList.remove('open');if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}a9913ApplyVersion()}
+  }
+  function a9913Regression(){const issues=[],own=a9913Audit(),probe=a9913Probe(),prev=window.__A9912_TEST__?.audit?.(),exp=window.__A9911_TEST__?.audit?.(),timers=window.__A9910_TEST__?.audit?.();if(!own.ok)issues.push(...own.issues);if(!probe.ok)issues.push('背包強化操作 probe 未通過');if(prev?.ok!==true)issues.push('Alpha99.12 六卷軸回歸未通過');if(exp?.ok!==true)issues.push('Alpha99.11 EXP 條回歸未通過');if(timers?.ok!==true)issues.push('Alpha99.10 計時器回歸未通過');return{ok:issues.length===0,build:A9913_BUILD,issues,own,probe,previous:{a9912:prev?.ok===true,a9911:exp?.ok===true,a9910:timers?.ok===true}}}
+
+  const a9913ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9913ShowLoginBase.apply(this,arguments);a9913ApplyVersion();return r};
+  const a9913ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9913ShowSlotsBase.apply(this,arguments);a9913ApplyVersion();return r};
+  const a9913OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9913OpenCreateBase.apply(this,arguments);a9913ApplyVersion();return r};
+  const a9913EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9913EnterSlotBase.apply(this,arguments);a9913ApplyVersion();return r};
+  const a9913RenderBase=render;render=function(){const r=a9913RenderBase.apply(this,arguments);a9913ApplyVersion();return r};
+  a9913ApplyVersion();
+  window.__A9913_TEST__={build:A9913_BUILD,audit:a9913Audit,probe:a9913Probe,regression:a9913Regression,candidates:a9913InventoryCandidates,enhanceInventory:a9913EnhanceInventory,safeEnhanceInventory:a9913SafeEnhanceInventory,applyVersion:a9913ApplyVersion,previous:window.__A9912_TEST__};
+})();
+
+// ===== Alpha99.14：碧恩祝福後固定視窗修復 + 雜貨商卷軸調整 =====
+const A9914_BUILD='B1.0 Alpha99.14';
+(()=>{
+  const A9914_GROCERY_ADD=Object.freeze(['scroll_weapon','scroll_armor','new_item_uncurse']);
+  const A9914_GROCERY_REMOVE=Object.freeze(['scroll_weapon_b','scroll_armor_b']);
+  const A9914_GROCERY_ADD_SET=new Set(A9914_GROCERY_ADD);
+  const A9914_GROCERY_REMOVE_SET=new Set(A9914_GROCERY_REMOVE);
+
+  // 新增的三種卷軸禁止販售；Alpha99.12 原先六種卷軸的禁售規則仍保留。
+  for(const id of A9914_GROCERY_ADD){if(DATA.items?.[id])DATA.items[id].noSell=true}
+
+  // 以 Alpha99.12 的商店結果為基礎：移除祝福武卷／祝福防卷，再加入普通武卷／普通防卷／解除詛咒卷軸。
+  const a9914ShopListBase=a7ShopList;
+  a7ShopList=function(npc){
+    const base=a9914ShopListBase.apply(this,arguments)||[];
+    if(!npc||String(npc.title||'')!=='雜貨商人'||!base.length)return base;
+    const out=base.filter(id=>!A9914_GROCERY_REMOVE_SET.has(String(id||'')));
+    for(const id of A9914_GROCERY_ADD)if(DATA.items?.[id]&&!out.includes(id))out.push(id);
+    return out;
+  };
+
+  // 三種新加入雜貨商的卷軸固定 1 金幣；不改道具原始價值欄位。
+  const a9914BundleBase=a7Bundle;
+  a7Bundle=function(id){if(A9914_GROCERY_ADD_SET.has(String(id||'')))return{cnt:1,cost:1};return a9914BundleBase.apply(this,arguments)};
+
+  // 新增三種卷軸不可手動／自動販售。
+  const a9914SellableBase=a10Sellable;
+  a10Sellable=function(id){if(A9914_GROCERY_ADD_SET.has(String(id||'')))return false;return a9914SellableBase.apply(this,arguments)};
+
+  function a9914CurrentBianNpc(npc){
+    if(npc?.id==='npc_bian')return npc;
+    try{return a9846FindNpc?.()||a7Town?.()?.npcs?.find(n=>String(n.id)==='npc_bian')||null}catch(e){return null}
+  }
+  function a9914RestoreBianShell(npc,scrollTop=0){
+    const box=document.getElementById('village-action');npc=a9914CurrentBianNpc(npc);
+    if(!box||!state||!a7IsVillage()||!npc)return false;
+    if(npc.id)state._a7NpcId=npc.id;
+    // a9842RenderBian 會以 innerHTML 重畫整個 #village-action；立即補回固定視窗殼，避免玩家看到介面跳掉。
+    try{a972ShowNpcAction()}catch(e){}
+    try{a9846DecorateNpc()}catch(e){console.error('Alpha99.14 Bian redecorate',e)}
+    try{window.__A9855_TEST__?.clean?.()}catch(e){}
+    try{window.__A9850_TEST__?.normalize?.()}catch(e){}
+    if(!box.querySelector(':scope > .a9846-npc-head')||!box.querySelector(':scope > .a9846-npc-scroll')||box.querySelectorAll(':scope > .a972-npc-close').length!==1){
+      try{a972ShowNpcAction()}catch(e){}
+      try{a9846DecorateNpc()}catch(e){}
+    }
+    const sc=box.querySelector(':scope > .a9846-npc-scroll');if(sc)sc.scrollTop=Math.max(0,Number(scrollTop)||0);
+    return !!(box.classList.contains('a972-open')&&box.querySelector(':scope > .a9846-npc-head')&&sc&&box.querySelectorAll(':scope > .a972-npc-close').length===1);
+  }
+
+  // 碧恩每次祝福／解咒後都會再次呼叫 a9842RenderBian；在最終 renderer 外層統一保留彈窗殼與捲動位置。
+  const a9914BianRenderBase=a9842RenderBian;
+  a9842RenderBian=function(npc){
+    const box=document.getElementById('village-action'),sc=box?.querySelector(':scope > .a9846-npc-scroll');
+    const wasOpen=!!box?.classList.contains('a972-open')||String(state?._a7NpcId||'')===String(npc?.id||'');
+    const oldScroll=Number(sc?.scrollTop||box?.scrollTop||0);
+    const r=a9914BianRenderBase.apply(this,arguments);
+    if(wasOpen||String(npc?.id||'')==='npc_bian')a9914RestoreBianShell(npc,oldScroll);
+    return r;
+  };
+
+  function a9914ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9914_BUILD}catch(e){document.title='樓梯口天堂 · '+A9914_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9914_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.14：修正碧恩祝福後 NPC 視窗殼消失；雜貨商改售普通武卷、普通防卷、解除詛咒卷軸各 1 金幣，並移除祝福武卷／祝福防卷。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.14｜碧恩祝福視窗修復＋雜貨商卷軸調整｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9914_BUILD+'</b><p>修正 NPC 碧恩按下「祝福」或「解除詛咒」後，固定 NPC 標頭／捲動區／關閉鍵被重新 render 洗掉的問題。</p><p>雜貨商新增「對武器施法的卷軸、對盔甲施法的卷軸、解除詛咒的卷軸」，售價皆 1 金幣且禁止販售；同時從雜貨商移除「祝福的 對武器施法的卷軸、祝福的 對盔甲施法的卷軸」。</p><small>賦予武器／盔甲／飾品祝福卷軸與對飾品施法卷軸仍保留在雜貨商；Alpha99.12 原六卷軸禁售屬性不回退。碧恩祝福機率與詞綴規則未修改。</small>';
+  }
+
+  function a9914ShopAudit(){
+    const issues=[],shops=[];
+    for(const id of A9914_GROCERY_ADD){const d=DATA.items?.[id],b=a7Bundle(id);if(!d)issues.push('缺少 '+id);if(Number(b?.cost)!==1||Number(b?.cnt)!==1)issues.push(id+' 售價不是 1');if(!d?.noSell||a10Sellable(id)!==false)issues.push(id+' 仍可販售')}
+    for(const [townId,town] of Object.entries(DATA.towns||{}))for(const npc of(town?.npcs||[])){
+      if(String(npc?.title||'')!=='雜貨商人')continue;const list=a7ShopList(npc)||[],active=list.length>0;
+      if(active){for(const id of A9914_GROCERY_ADD)if(!list.includes(id))issues.push(townId+'/'+npc.id+' 缺 '+id);for(const id of A9914_GROCERY_REMOVE)if(list.includes(id))issues.push(townId+'/'+npc.id+' 未移除 '+id)}
+      shops.push({townId,npcId:npc.id,name:npc.n,active,count:list.length,added:A9914_GROCERY_ADD.filter(id=>list.includes(id)),removedStillPresent:A9914_GROCERY_REMOVE.filter(id=>list.includes(id))});
+    }
+    return{ok:issues.length===0,build:A9914_BUILD,issues,shops,add:[...A9914_GROCERY_ADD],remove:[...A9914_GROCERY_REMOVE]};
+  }
+
+  async function a9914BianProbe(){
+    if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const out={build:A9914_BUILD,ok:false,before:{},after:{},error:''};
+    try{
+      a76TestReset('knight',60);state.player.gold=999999;state.equipment=state.equipment||{};state.equipment.wpn='wpn_longsword';state.equipAffix=state.equipAffix||{};delete state.equipAffix.wpn;state.lockedItems={};state.inventory=state.inventory||{};state.inventory.new_item_bless_wpn=3;derive();
+      let townId='',npc=null;for(const [tid,t] of Object.entries(DATA.towns||{})){const n=(t.npcs||[]).find(x=>x.id==='npc_bian');if(n){townId=tid;npc=n;break}}
+      if(!npc)throw new Error('找不到 npc_bian');state.inVillage=true;state.mapId=townId;state._a7NpcId=npc.id;state.running=false;
+      a7RenderVillage();a72DispatchNpc(townId,npc);a972ShowNpcAction();a9846DecorateNpc();await new Promise(r=>setTimeout(r,0));
+      const box=document.getElementById('village-action');const snapShell=()=>({open:!!box?.classList.contains('a972-open'),head:!!box?.querySelector(':scope > .a9846-npc-head'),scroll:!!box?.querySelector(':scope > .a9846-npc-scroll'),close:box?.querySelectorAll(':scope > .a972-npc-close').length||0,blessButtons:box?.querySelectorAll('[data-a9842-bian]').length||0});
+      out.before=snapShell();const b=box?.querySelector('[data-a9842-bian="wpn"]')||box?.querySelector('[data-a9842-bian]');if(!b)throw new Error('找不到碧恩祝福按鈕');const beforeCnt=a8Count('new_item_bless_wpn');b.click();await new Promise(r=>setTimeout(r,0));out.after=snapShell();out.scrollDelta=beforeCnt-a8Count('new_item_bless_wpn');
+      out.ok=out.before.open&&out.before.head&&out.before.scroll&&out.before.close===1&&out.after.open&&out.after.head&&out.after.scroll&&out.after.close===1&&out.after.blessButtons>0&&out.scrollDelta===1;
+      return out;
+    }catch(e){out.error=String(e?.stack||e);return out}
+    finally{try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}a9914ApplyVersion()}
+  }
+
+  function a9914PurchaseProbe(){
+    if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const rows=[];let error='';
+    try{
+      a76TestReset('knight',60);state.player.gold=100;
+      for(const id of A9914_GROCERY_ADD){const g=state.player.gold,c=a8Count(id),ok=a10Buy(id,1);rows.push({id,ok,goldDelta:g-state.player.gold,itemDelta:a8Count(id)-c,sellable:a10Sellable(id),autoProtected:typeof a971AutoSellProtected==='function'?a971AutoSellProtected(id):''})}
+      return{ok:rows.every(x=>x.ok&&x.goldDelta===1&&x.itemDelta===1&&x.sellable===false&&!!x.autoProtected),build:A9914_BUILD,rows,error};
+    }catch(e){error=String(e?.stack||e);return{ok:false,build:A9914_BUILD,rows,error}}
+    finally{try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}a9914ApplyVersion()}
+  }
+
+  function a9914ShopUiProbe(){
+    if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const out={ok:false,build:A9914_BUILD,error:''};
+    try{
+      a76TestReset('knight',60);state.player.gold=100;
+      let townId='',npc=null;outer:for(const [tid,t] of Object.entries(DATA.towns||{}))for(const n of(t.npcs||[])){if(String(n?.title||'')==='雜貨商人'&&(a7ShopList(n)||[]).length){townId=tid;npc=n;break outer}}
+      if(!npc)throw new Error('找不到可營運雜貨商人');state.inVillage=true;state.mapId=townId;state._a7NpcId=npc.id;state.running=false;a7RenderVillage();a72DispatchNpc(townId,npc);a972ShowNpcAction();a9846DecorateNpc();
+      const box=document.getElementById('village-action'),sc=box?.querySelector(':scope > .a9846-npc-scroll')||box,text=String(sc?.textContent||'').replace(/\s+/g,' '),list=a7ShopList(npc)||[];
+      out.townId=townId;out.npcId=npc.id;out.hasNew=A9914_GROCERY_ADD.every(id=>list.includes(id));out.removed=A9914_GROCERY_REMOVE.every(id=>!list.includes(id));out.textHasNew=['對武器施法的卷軸','對盔甲施法的卷軸','解除詛咒的卷軸'].every(n=>text.includes(n));out.textHasRemoved=['祝福的 對武器施法的卷軸','祝福的 對盔甲施法的卷軸'].some(n=>text.includes(n));out.shell=!!box?.classList.contains('a972-open')&&!!box?.querySelector(':scope > .a9846-npc-head')&&!!box?.querySelector(':scope > .a9846-npc-scroll')&&box?.querySelectorAll(':scope > .a972-npc-close').length===1;out.overflow=!!box&&(box.scrollWidth>box.clientWidth+3);out.ok=out.hasNew&&out.removed&&out.textHasNew&&!out.textHasRemoved&&out.shell&&!out.overflow;return out;
+    }catch(e){out.error=String(e?.stack||e);return out}
+    finally{try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}a9914ApplyVersion()}
+  }
+
+  async function a9914Regression(){
+    const issues=[],shop=a9914ShopAudit(),buy=a9914PurchaseProbe(),shopUi=a9914ShopUiProbe(),bian=await a9914BianProbe();let bag={ok:false},exp={ok:false},timers={ok:false};
+    try{bag=window.__A9913_TEST__?.probe?.()||{ok:false}}catch(e){bag={ok:false,error:String(e)}}
+    try{exp=window.__A9911_TEST__?.audit?.()||{ok:false}}catch(e){exp={ok:false,error:String(e)}}
+    try{timers=window.__A9910_TEST__?.audit?.()||{ok:false}}catch(e){timers={ok:false,error:String(e)}}
+    if(!shop.ok)issues.push(...shop.issues);if(!buy.ok)issues.push('三種新卷軸購買／禁售 probe 未通過');if(!shopUi.ok)issues.push('雜貨商 UI probe 未通過');if(!bian.ok)issues.push('碧恩祝福後固定視窗回歸失敗');if(!bag.ok)issues.push('Alpha99.13 背包強化 probe 未通過');if(!exp.ok)issues.push('Alpha99.11 EXP 回歸未通過');if(!timers.ok)issues.push('Alpha99.10 計時器回歸未通過');
+    return{ok:issues.length===0,build:A9914_BUILD,issues,shop,buy,shopUi,bian,previous:{a9913Bag:bag.ok===true,a9911Exp:exp.ok===true,a9910Timers:timers.ok===true},intentionalSupersession:'Alpha99.12 雜貨商六卷軸全保留規則已由 Alpha99.14 指定移除祝福武卷／祝福防卷，故不再要求 A9912 audit 全綠'};
+  }
+
+  const a9914ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9914ShowLoginBase.apply(this,arguments);a9914ApplyVersion();return r};
+  const a9914ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9914ShowSlotsBase.apply(this,arguments);a9914ApplyVersion();return r};
+  const a9914OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9914OpenCreateBase.apply(this,arguments);a9914ApplyVersion();return r};
+  const a9914EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9914EnterSlotBase.apply(this,arguments);a9914ApplyVersion();return r};
+  const a9914RenderBase=render;render=function(){const r=a9914RenderBase.apply(this,arguments);a9914ApplyVersion();return r};
+  a9914ApplyVersion();
+  window.__A9914_TEST__={build:A9914_BUILD,shopAudit:a9914ShopAudit,purchaseProbe:a9914PurchaseProbe,shopUiProbe:a9914ShopUiProbe,bianProbe:a9914BianProbe,regression:a9914Regression,restoreBianShell:a9914RestoreBianShell,applyVersion:a9914ApplyVersion,previous:window.__A9913_TEST__};
+})();
+
+
+// ===== Alpha99.15：BOSS 回血永久關閉／自動設定總檢 =====
+const A9915_BUILD='B1.0 Alpha99.15';
+(()=>{
+  // 玩家指定：世界王/BOSS 不再自動回血。
+  // 保留 DATA.worldBosses.healPer5s 原始資料，避免破壞歷史資料、來源校對與舊存檔；執行層永久忽略回血值。
+  const A9915_BOSS_REGEN_ENABLED=false;
+
+  // 總檢時發現桌機右側 drawer 寬度約 300px，98.68 的桌機技能 grid 仍以寬面板設計而會橫向溢出。
+  // 只在桌機右側設定 drawer 改成窄欄換行；手機原本版型不動。
+  const a9915Style=document.createElement('style');a9915Style.id='a9915-style';a9915Style.textContent=`
+  @media (min-width:901px){
+    #drawer .a9868-body,#drawer .a9868-auto,#drawer .a9868-card{min-width:0;max-width:100%;box-sizing:border-box}
+    #drawer .a9868-card{overflow:hidden;padding:10px}
+    #drawer .a9868-row.top{grid-template-columns:minmax(0,1fr) auto 54px auto;gap:5px}
+    #drawer .a9868-skillline,#drawer .a9868-skillline.convert{grid-template-columns:minmax(74px,1fr) auto 54px auto;gap:5px}
+    #drawer .a9868-skillline .wide,#drawer .a9868-skillline.convert select.wide{grid-column:1/-1;width:100%}
+    #drawer .a9868-item-row{grid-template-columns:minmax(0,1fr) auto;gap:6px}
+    #drawer .a9868-item-row small{grid-column:1/-1;text-align:left;padding-left:26px}
+    #drawer .a9868-tabs button{min-width:0;font-size:11px;padding-left:4px;padding-right:4px}
+  }`;
+  document.head.appendChild(a9915Style);
+
+  a43BossHeal=function(){return 0};
+  if(window.__A43_TEST__)window.__A43_TEST__.heal=a43BossHeal;
+
+  // 原本 tick 每 5 秒排程一次回血；本版直接移除該排程分支，而不是只把回血數字設為 0。
+  a43BossTick=function(){
+    if(!state?.boss?.fighting)return;
+    const now=Date.now(),m=a43BossPrimaryMob();
+    if(!m)return a43StopBoss(false);
+    if(now>=Number(state.boss.nextPlayerAt||0)){
+      state.boss.nextPlayerAt=now+Math.max(220,Math.round((typeof a8AttackInterval==='function'?a8AttackInterval():.72)*1000));
+      a43BossPlayerHit();
+    }
+    if(state.boss.fighting&&now>=Number(state.boss.nextBossAt||0)){
+      state.boss.nextBossAt=now+Math.max(300,Math.round(Number(m.atkSpd||2)*1000));
+      a43BossMonsterHit();
+    }
+    // 0 代表本版沒有 BOSS 自動回血排程。
+    state.boss.nextHealAt=0;
+  };
+
+  const a9915BossStartBase=a43StartBoss;
+  a43StartBoss=function(...args){
+    const r=a9915BossStartBase.apply(this,args);
+    if(state?.boss)state.boss.nextHealAt=0;
+    return r;
+  };
+
+  // UI 不再顯示「每5秒回血」；也清掉歷史測試模式的暫停提示。
+  const a9915BossDrawerBase=a43BossDrawer;
+  a43BossDrawer=function(){
+    let h=a9915BossDrawerBase.apply(this,arguments);
+    h=h.replace(/　每5秒回血 [^<]+/g,'');
+    h=h.replace(/　回血：測試暫停/g,'');
+    h=h.replace(/<div class="a7-note"[^>]*>測試模式：BOSS 回血測試已暫停；正式版會恢復原本回血數值。<\/div>/g,'');
+    return h;
+  };
+
+  function a9915ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9915_BUILD}catch(e){document.title='樓梯口天堂 · '+A9915_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9915_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.15：BOSS 自動回血機制永久關閉；共同版自動設定已逐項完成執行、介面與現行存檔路徑總檢。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.15｜BOSS回血關閉＋自動設定總檢｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9915_BUILD+'</b><p>BOSS／世界王的自動回血執行層與每 5 秒回血排程已關閉，戰鬥中不會再自行恢復 HP；原始 healPer5s 資料只保留作歷史資料相容，不再參與戰鬥。</p><p>共同版自動設定已逐項檢查：自動喝水、指定治療術、開怪技能、循環攻擊技能、MP 門檻、轉換魔法、Buff 維持、職業輔助道具、變形、銀箭與各項低存量自動補貨皆正常。</p><small>本版沒有修改上述自動設定的玩法數值或條件；僅確認現行功能與存檔 round-trip 正常。歷史 Alpha98.88／Alpha99.7「BOSS 回血必須 ON」測試期待值已由本版需求正式取代。</small>';
+  }
+
+  function a9915BossProbe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0;
+    const out={ok:false,build:A9915_BUILD,regenEnabled:A9915_BOSS_REGEN_ENABLED,rows:[],dataKept:false,uiClean:false};
+    try{
+      if(typeof a76TestReset==='function')a76TestReset('knight',80);
+      const entries=Object.entries(DATA.worldBosses||{}).filter(([id,c])=>!c?.mvOnly&&Number(c?.healPer5s||0)>0);
+      out.dataKept=entries.length>0&&entries.every(([id,c])=>Number(c.healPer5s||0)>0);
+      for(const [id,c] of entries.slice(0,4)){
+        state.boss=state.boss||{};state.boss.id=id;state.boss.active=true;state.boss.fighting=true;
+        const max=a43BossMaxHp(c),before=Math.max(1,max-Math.max(1,Number(c.healPer5s||1)));state.boss.hp=before;state.boss.nextHealAt=1;
+        const got=a43BossHeal(),after=state.boss.hp;
+        const oldPlayerAt=state.boss.nextPlayerAt,oldBossAt=state.boss.nextBossAt;
+        state.boss.nextPlayerAt=Number.MAX_SAFE_INTEGER;state.boss.nextBossAt=Number.MAX_SAFE_INTEGER;a43BossTick();
+        const tickAfter=state.boss.hp,nextHealAt=state.boss.nextHealAt;
+        state.boss.nextPlayerAt=oldPlayerAt;state.boss.nextBossAt=oldBossAt;
+        out.rows.push({id,name:a43BossName(id),healPer5s:Number(c.healPer5s||0),before,after,got,tickAfter,nextHealAt,ok:got===0&&after===before&&tickAfter===before&&nextHealAt===0});
+      }
+      const ui=String(a43BossDrawer()||'');out.uiClean=!ui.includes('每5秒回血')&&!ui.includes('回血：測試暫停')&&!ui.includes('BOSS 回血測試已暫停');
+      out.ok=A9915_BOSS_REGEN_ENABLED===false&&out.dataKept&&out.rows.length>0&&out.rows.every(x=>x.ok)&&out.uiClean;
+    }catch(e){out.error=String(e?.stack||e)}
+    finally{try{if(snap){state=snap;derive();render()}else state=null;if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending}catch(e){out.restoreError=String(e);out.ok=false}a9915ApplyVersion()}
+    return out;
+  }
+
+  function a9915AutoUiAudit(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0;
+    const issues=[];let html='';
+    try{
+      if(typeof a76TestReset==='function')a76TestReset('knight',60);
+      if(typeof a97EnsureState==='function')a97EnsureState();
+      html=String(drawerHtml('settings')||'');
+      for(const text of ['自動喝治癒藥水','開怪技能','攻擊技能','治療魔法','轉換魔法','自動化技能（狀態）','輔助道具','自動加速藥水','藍色藥水','勇敢藥水','變形卷軸'])if(!html.includes(text))issues.push('缺少 '+text);
+      for(const key of ['heal','healPct','healPotion','healSkill','healSkillId','attackSkill','attackMpMin','openSkill','openMpMin','convertSkill','convertHpMin','convertMpMax','autoBuffSkills','autoRestock'])if(!(key in (state.autoCombat||{})))issues.push('autoCombat 缺 '+key);
+      const prior=window.__A9868_TEST__?.audit?.();if(prior?.ok!==true)issues.push('Alpha98.68 共同版自動設定 audit 未通過');
+      return{ok:issues.length===0,build:A9915_BUILD,issues,prior:{ok:prior?.ok===true,class:prior?.class,attackSkills:prior?.attackSkills,healSkills:prior?.healSkills,buffSkills:prior?.buffSkills,convertSkills:prior?.convertSkills},htmlLength:html.length};
+    }catch(e){return{ok:false,build:A9915_BUILD,issues:[...issues,String(e?.stack||e)]}}
+    finally{try{if(snap){state=snap;derive();render()}else state=null;if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending}catch(e){}a9915ApplyVersion()}
+  }
+
+  function a9915Audit(){
+    const boss=a9915BossProbe(),auto=a9915AutoUiAudit(),issues=[];
+    if(!boss.ok)issues.push('BOSS 回血關閉 probe 未通過');
+    if(!auto.ok)issues.push('共同版自動設定 UI/state audit 未通過');
+    return{ok:issues.length===0,build:A9915_BUILD,issues,boss,auto,note:'Alpha98.88／Alpha99.7 的回血 ON 歷史期待值已由 Alpha99.15 玩家指定規則正式取代。'};
+  }
+
+  async function a9915Regression(){
+    const issues=[],boss=a9915BossProbe(),auto=a9915AutoUiAudit();
+    if(!boss.ok)issues.push('BOSS 回血關閉未通過');if(!auto.ok)issues.push('自動設定 UI/state 未通過');
+    const previous={};
+    try{previous.shop=window.__A9914_TEST__?.shopAudit?.()||{ok:false};if(!previous.shop.ok)issues.push('Alpha99.14 雜貨商規則回歸失敗')}catch(e){previous.shop={ok:false,error:String(e)};issues.push('Alpha99.14 雜貨商規則例外')}
+    try{previous.buy=window.__A9914_TEST__?.purchaseProbe?.()||{ok:false};if(!previous.buy.ok)issues.push('Alpha99.14 卷軸購買/禁售回歸失敗')}catch(e){previous.buy={ok:false,error:String(e)};issues.push('Alpha99.14 購買 probe 例外')}
+    try{previous.shopUi=window.__A9914_TEST__?.shopUiProbe?.()||{ok:false};if(!previous.shopUi.ok)issues.push('Alpha99.14 雜貨商 UI 回歸失敗')}catch(e){previous.shopUi={ok:false,error:String(e)};issues.push('Alpha99.14 商店 UI 例外')}
+    try{
+      const r=await window.__A9914_TEST__?.bianProbe?.()||{ok:false};const a=r.after||{};
+      previous.bian={ok:!!(a.open&&a.head&&a.scroll&&Number(a.close)===1&&Number(r.scrollDelta)===1),legacyOk:r.ok===true,after:a,scrollDelta:r.scrollDelta};
+      // 舊 99.14 QA 還要求「祝福後按鈕一定存在」；若祝福成功後該裝備已不再 eligible，按鈕消失是正常狀態，不視為介面回歸。
+      if(!previous.bian.ok)issues.push('Alpha99.14 碧恩固定視窗殼回歸失敗');
+    }catch(e){previous.bian={ok:false,error:String(e)};issues.push('Alpha99.14 碧恩 probe 例外')}
+    for(const [k,obj,msg] of [['bag',window.__A9913_TEST__,'Alpha99.13 背包強化'],['exp',window.__A9911_TEST__,'Alpha99.11 EXP'],['timers',window.__A9910_TEST__,'Alpha99.10 計時器']]){try{const r=k==='bag'?obj?.probe?.():obj?.audit?.();previous[k]=r||{ok:false};if(previous[k].ok!==true)issues.push(msg+' 回歸失敗')}catch(e){previous[k]={ok:false,error:String(e)};issues.push(msg+' probe 例外')}}
+    a9915ApplyVersion();return{ok:issues.length===0,build:A9915_BUILD,issues,boss,auto,previous};
+  }
+
+  const a9915ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9915ShowLoginBase.apply(this,arguments);a9915ApplyVersion();return r};
+  const a9915ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9915ShowSlotsBase.apply(this,arguments);a9915ApplyVersion();return r};
+  const a9915OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9915OpenCreateBase.apply(this,arguments);a9915ApplyVersion();return r};
+  const a9915EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9915EnterSlotBase.apply(this,arguments);a9915ApplyVersion();return r};
+  const a9915RenderBase=render;render=function(){const r=a9915RenderBase.apply(this,arguments);a9915ApplyVersion();return r};
+  a9915ApplyVersion();
+  window.__A9915_TEST__={build:A9915_BUILD,bossProbe:a9915BossProbe,autoUiAudit:a9915AutoUiAudit,audit:a9915Audit,regression:a9915Regression,regenEnabled:()=>A9915_BOSS_REGEN_ENABLED,applyVersion:a9915ApplyVersion,previous:window.__A9914_TEST__};
+})();
+
+
+// ===== Alpha99.16：回憶蠟燭可重製創角初始能力點 =====
+const A9916_BUILD='B1.0 Alpha99.16';
+(()=>{
+  const A9916_KEYS=['str','dex','con','int','wis','cha'];
+  const A9916_NAMES={str:'力量 STR',dex:'敏捷 DEX',con:'體質 CON',int:'智力 INT',wis:'精神 WIS',cha:'魅力 CHA'};
+  let a9916Draft=null,a9916ItemId='candle';
+
+  function a9916Class(){return state?.player&&CLASS[state.player.cls]?CLASS[state.player.cls]:null}
+  function a9916Pts(){return Math.max(0,Number(a9916Class()?.pts||0))}
+  function a9916Base(){const c=a9916Class();return c?{...c.base}:Object.fromEntries(A9916_KEYS.map(k=>[k,0]))}
+  function a9916SanitizeDraft(src){
+    const base=a9916Base(),total=a9916Pts(),d={};let spent=0;
+    for(const k of A9916_KEYS){const b=Number(base[k]||0),v=Math.max(b,Math.min(20,Math.floor(Number(src?.[k]??b))));d[k]=v;spent+=v-b}
+    if(spent>total)return{...base};
+    return d;
+  }
+  function a9916Spent(d=a9916Draft){const base=a9916Base();return A9916_KEYS.reduce((n,k)=>n+Math.max(0,Number(d?.[k]||base[k])-Number(base[k]||0)),0)}
+  function a9916Remain(d=a9916Draft){return Math.max(0,a9916Pts()-a9916Spent(d))}
+  function a9916LevelEarned(){return Math.max(0,Math.floor(Number(state?.player?.lv||0))-49)}
+  function a9916EnsureOverlay(){
+    let o=document.getElementById('a9916-respec');if(o)return o;
+    o=document.createElement('div');o.id='a9916-respec';o.className='a9916-overlay';o.innerHTML='<div class="a9916-modal" role="dialog" aria-modal="true" aria-labelledby="a9916-title"><div class="a9916-head"><div><small>MEMORY CANDLE</small><b id="a9916-title">回憶蠟燭 · 初始能力重製</b></div><button type="button" data-a9916-close aria-label="關閉">✕</button></div><div class="a9916-body"><div class="a9916-note"></div><div class="a9916-summary"></div><div class="a9916-stats"></div><button type="button" class="a9916-reset" data-a9916-reset>全部退回職業基礎值</button></div><div class="a9916-foot"><button type="button" data-a9916-cancel>取消</button><button type="button" class="primary" data-a9916-apply>確定重製並使用蠟燭</button></div></div>';
+    document.body.appendChild(o);
+    o.addEventListener('click',e=>{if(e.target===o)a9916Close()});
+    o.querySelector('[data-a9916-close]').onclick=a9916Close;o.querySelector('[data-a9916-cancel]').onclick=a9916Close;
+    o.querySelector('[data-a9916-reset]').onclick=()=>{a9916Draft=a9916Base();a9916RenderModal()};
+    o.querySelector('[data-a9916-apply]').onclick=()=>a9916ApplyDraft(a9916Draft,true);
+    return o;
+  }
+  function a9916Open(itemId='candle'){
+    if(!state?.player){toast('目前沒有角色');return false}
+    const c=a9916Class();if(!c){toast('找不到目前職業的創角能力資料');return false}
+    if(a8Count(itemId)<1){toast('背包裡沒有回憶蠟燭');return false}
+    a9916ItemId=itemId;a9916Draft=a9916SanitizeDraft(state.creationStats||c.base);
+    const o=a9916EnsureOverlay();o.classList.add('open');a9916RenderModal();return true;
+  }
+  function a9916Close(){document.getElementById('a9916-respec')?.classList.remove('open');a9916Draft=null}
+  function a9916RenderModal(){
+    const o=a9916EnsureOverlay(),c=a9916Class();if(!c||!a9916Draft)return;
+    const base=a9916Base(),remain=a9916Remain(),total=a9916Pts(),usedPanacea=Math.max(0,Number(state.panaceaUsed||0)),lvPts=a9916LevelEarned();
+    o.querySelector('.a9916-note').innerHTML='這裡重配的是<b>建立角色時的初始能力點</b>。'+escapeHtml(c.n)+'共有 <b>'+total+'</b> 點初始點數；必須全部分配完才能確認。';
+    o.querySelector('.a9916-summary').innerHTML='<span>初始剩餘 <b>'+remain+'</b> / '+total+'</span><span>Lv.50+ 點數將退回 <b>'+lvPts+'</b></span><span>純白萬能藥返還 <b>'+usedPanacea+'</b></span>';
+    o.querySelector('.a9916-stats').innerHTML=A9916_KEYS.map(k=>{const b=Number(base[k]||0),v=Number(a9916Draft[k]||b),minus=v>b,plus=remain>0&&v<20;return '<div class="a9916-row"><span><b>'+A9916_NAMES[k]+'</b><small>職業基礎 '+b+'</small></span><div><button type="button" data-a9916-stat="'+k+'" data-d="-1" '+(minus?'':'disabled')+'>－</button><strong>'+v+'</strong><button type="button" data-a9916-stat="'+k+'" data-d="1" '+(plus?'':'disabled')+'>＋</button></div></div>'}).join('');
+    o.querySelectorAll('[data-a9916-stat]').forEach(b=>b.onclick=()=>{const k=b.dataset.a9916Stat,d=Number(b.dataset.d),baseV=Number(base[k]||0),cur=Number(a9916Draft[k]||baseV);if(d>0&&a9916Remain()>0&&cur<20)a9916Draft[k]=cur+1;else if(d<0&&cur>baseV)a9916Draft[k]=cur-1;a9916RenderModal()});
+    const apply=o.querySelector('[data-a9916-apply]');apply.disabled=remain!==0;apply.textContent=remain===0?'確定重製並使用蠟燭':'還有 '+remain+' 點尚未分配';
+  }
+  function a9916ApplyDraft(draft,consume=true){
+    if(!state?.player)return false;const c=a9916Class();if(!c)return false;
+    const clean=a9916SanitizeDraft(draft),base=a9916Base(),spent=A9916_KEYS.reduce((n,k)=>n+Math.max(0,Number(clean[k])-Number(base[k]||0)),0);
+    if(spent!==a9916Pts()){toast('請先分配完全部創角初始能力點');return false}
+    if(consume&&a8Count(a9916ItemId)<1){toast('回憶蠟燭數量不足');a9916Close();return false}
+    const usedPanacea=Math.max(0,Number(state.panaceaUsed||0));
+    if(consume&&!a8Take(a9916ItemId,1))return false;
+    state.creationStats={...clean};
+    state.player.stats={...clean};
+    if(!state.a9885||typeof state.a9885!=='object')state.a9885={};
+    state.a9885.alloc=Object.fromEntries(A9916_KEYS.map(k=>[k,0]));
+    state.a9885.rule='lv50-plus-one-per-level';state.a9885.migrated=true;state.a9885.restoredBy='Alpha99.16-candle-respec';
+    state.panaceaUsed=0;
+    if(usedPanacea&&a8Item('panacea_white'))a8Add('panacea_white',usedPanacea);
+    derive();state.player.hp=state.player.maxHp;state.player.mp=state.player.maxMp;
+    a9916Close();
+    log('回憶蠟燭完成初始能力重製｜創角點數 '+a9916Pts()+' 點已重新分配｜Lv.50+ 可分配點退回 '+a9916LevelEarned()+(usedPanacea?'｜純白的萬能藥 ×'+usedPanacea:''),'gain');
+    save();render();try{renderDrawers()}catch(e){};toast('初始能力重製完成');return true;
+  }
+
+  // 取代 Alpha99.1 的回憶蠟燭直接重置：先開重新配點視窗，確認後才消耗道具。
+  const a9916UseItemBase=a8UseItem;
+  a8UseItem=function(id){const d=a8Item(id);if(d?.eff==='reset')return a9916Open(id);return a9916UseItemBase.apply(this,arguments)};
+
+  // 更新道具說明，不變更售價、掉落、交易屬性或其他規則。
+  if(DATA.items?.candle)DATA.items.candle.d='可重製建立角色時分配的初始能力點；Lv.50 起取得的能力點會退回未分配，已使用萬能藥會返還純白的萬能藥。自訂商店售價：10 金幣。';
+
+  const st=document.createElement('style');st.id='a9916-style';st.textContent=`
+#a9916-respec.a9916-overlay{display:none;position:fixed;inset:0;z-index:9800;background:rgba(0,0,0,.76);align-items:center;justify-content:center;padding:14px;box-sizing:border-box}
+#a9916-respec.a9916-overlay.open{display:flex}.a9916-modal{width:min(470px,100%);max-height:min(720px,calc(100dvh - 24px));display:flex;flex-direction:column;overflow:hidden;border:1px solid #8b6a2b;border-radius:12px;background:linear-gradient(180deg,#20170d,#100c08);box-shadow:0 18px 70px #000;color:#ead9b5}
+.a9916-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-bottom:1px solid #4e3b22;background:#171008}.a9916-head>div{display:flex;flex-direction:column;gap:2px}.a9916-head small{font-size:9px;color:#8f7850;letter-spacing:1.5px}.a9916-head b{font-size:16px;color:#f0d06b}.a9916-head button{width:32px;height:32px;border:1px solid #594322;border-radius:6px;background:#21170d;color:#d6c49d;cursor:pointer}
+.a9916-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px}.a9916-note{padding:9px 10px;border:1px solid #4d3b22;border-radius:7px;background:#171109;color:#cdbb96;font-size:12px;line-height:1.6}.a9916-note b{color:#f2d878}.a9916-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:9px 0}.a9916-summary span{padding:7px 6px;border:1px solid #43331f;border-radius:6px;background:#110d08;font-size:10px;text-align:center;color:#a99570}.a9916-summary b{display:block;font-size:14px;color:#ffd85f;margin-top:2px}
+.a9916-stats{display:flex;flex-direction:column;gap:6px}.a9916-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 9px;border:1px solid #49371f;border-radius:7px;background:#151009}.a9916-row>span{display:flex;flex-direction:column;gap:1px}.a9916-row>span b{font-size:12px;color:#e2cfaa}.a9916-row>span small{font-size:9px;color:#7f715b}.a9916-row>div{display:flex;align-items:center;gap:7px}.a9916-row button{width:31px;height:29px;border:1px solid #8a6d2e;border-radius:5px;background:linear-gradient(#5a441d,#2a1d0b);color:#ffe27a;font-size:17px;font-weight:900;cursor:pointer}.a9916-row button:disabled{opacity:.25;cursor:not-allowed}.a9916-row strong{min-width:28px;text-align:center;font-size:17px;color:#fff0b2}.a9916-reset{width:100%;margin-top:9px;padding:8px;border:1px solid #5a4728;border-radius:6px;background:#21170d;color:#cdb98d;cursor:pointer}
+.a9916-foot{flex:0 0 auto;display:grid;grid-template-columns:1fr 1.7fr;gap:8px;padding:10px 12px;border-top:1px solid #4e3b22;background:#120d08}.a9916-foot button{min-height:40px;border:1px solid #5d4829;border-radius:7px;background:#241a10;color:#c9b991;font-weight:700;cursor:pointer}.a9916-foot button.primary{border-color:#9a7530;background:linear-gradient(#72551d,#3b290e);color:#ffe68a}.a9916-foot button:disabled{opacity:.38;cursor:not-allowed;filter:grayscale(.8)}
+@media(max-width:500px){#a9916-respec.a9916-overlay{padding:6px}.a9916-modal{max-height:calc(100dvh - 12px);border-radius:9px}.a9916-head{padding:10px}.a9916-body{padding:9px}.a9916-summary{grid-template-columns:1fr}.a9916-summary span{display:flex;justify-content:space-between;align-items:center;text-align:left}.a9916-summary b{display:inline;margin:0}.a9916-row{padding:7px}.a9916-row button{width:34px;height:32px}.a9916-foot{padding:8px}}
+`;document.head.appendChild(st);
+
+  function a9916ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9916_BUILD}catch(e){document.title='樓梯口天堂 · '+A9916_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9916_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.16：回憶蠟燭新增「創角初始能力重製」；可重新分配建立角色時的全部初始能力點。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.16｜回憶蠟燭創角能力重製｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9916_BUILD+'</b><p>回憶蠟燭現在可以重新分配「建立角色時」的初始能力點：騎士／妖精 8 點、法師 16 點、黑暗妖精 10 點，規則與創角上限一致。</p><p>確認重製時，Lv.50 起取得的能力點仍全部退回未分配；已使用萬能藥仍依原規則返還純白的萬能藥。等級、名稱、裝備、背包、技能與其他進度不變。</p><small>本版只擴充回憶蠟燭的配點功能，不修改職業基礎值、升級能力點公式、萬能藥規則、戰鬥或 BOSS 規則。</small>';
+  }
+
+  function a9916PrepareUiTest(cls='knight'){
+    if(typeof a76TestReset!=='function')return false;
+    a76TestReset(CLASS[cls]?cls:'knight',60);state.inventory.candle=1;return a9916Open('candle');
+  }
+
+  function a9916Probe(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const rows=[],bad=[],add=(name,ok,detail={})=>{rows.push({name,ok:!!ok,detail});if(!ok)bad.push(name)};
+    try{
+      for(const cls of ['knight','elf','mage','dark']){if(typeof a76TestReset==='function')a76TestReset(cls,60);const c=CLASS[cls],base={...c.base};let d={...base},left=c.pts;for(const k of A9916_KEYS){const room=Math.max(0,20-d[k]),put=Math.min(left,room);d[k]+=put;left-=put;if(!left)break}add(cls+' 初始點數可完整重配',left===0&&a9916SanitizeDraft(d)&&A9916_KEYS.reduce((n,k)=>n+(d[k]-base[k]),0)===c.pts,{pts:c.pts,d})}
+      if(typeof a76TestReset==='function')a76TestReset('knight',60);state.inventory.candle=2;state.inventory.scroll_weapon=7;state.panaceaUsed=3;state.inventory.panacea_white=1;state.player.name='RespecQA';state.equipment.wpn='wpn_longsword';state.a9885={alloc:{str:4,dex:3,con:2,int:1,wis:1,cha:0},rule:'lv50-plus-one-per-level'};state.player.stats={...state.creationStats,str:Number(state.creationStats.str||0)+4,dex:Number(state.creationStats.dex||0)+3,con:Number(state.creationStats.con||0)+2,int:Number(state.creationStats.int||0)+1,wis:Number(state.creationStats.wis||0)+1};
+      const d={...CLASS.knight.base};d.str+=4;d.dex+=4;const before={lv:state.player.lv,name:state.player.name,weapon:state.equipment.wpn,scrolls:state.inventory.scroll_weapon,candle:state.inventory.candle,white:state.inventory.panacea_white||0};
+      const applied=a9916ApplyDraft(d,true);add('套用重製成功',applied===true,{applied});add('創角配點更新',A9916_KEYS.every(k=>Number(state.creationStats[k])===Number(d[k]))&&A9916_KEYS.every(k=>Number(state.player.stats[k])===Number(d[k])),{creationStats:state.creationStats,stats:state.player.stats});add('Lv50+ 配點全部退回',A9916_KEYS.every(k=>Number(state.a9885?.alloc?.[k]||0)===0)&&a9916LevelEarned()===11,{alloc:state.a9885?.alloc,earned:a9916LevelEarned()});add('萬能藥返還純白',state.panaceaUsed===0&&Number(state.inventory.panacea_white||0)===before.white+3,{white:state.inventory.panacea_white});add('只消耗一支回憶蠟燭',Number(state.inventory.candle||0)===before.candle-1,{candle:state.inventory.candle});add('等級名稱裝備背包其他物品保留',state.player.lv===before.lv&&state.player.name===before.name&&state.equipment.wpn===before.weapon&&state.inventory.scroll_weapon===before.scrolls,{lv:state.player.lv,name:state.player.name,weapon:state.equipment.wpn,scrolls:state.inventory.scroll_weapon});
+      state.inventory.candle=(state.inventory.candle||0)+1;a9916Draft=a9916SanitizeDraft(state.creationStats);a9916Open('candle');const o=document.getElementById('a9916-respec');add('重製視窗完整',!!o?.classList.contains('open')&&o.querySelectorAll('[data-a9916-stat]').length===12&&!!o.querySelector('[data-a9916-reset]')&&!!o.querySelector('[data-a9916-apply]'),{rows:o?.querySelectorAll('.a9916-row').length});a9916Close();
+    }catch(e){bad.push(String(e?.stack||e))}
+    finally{try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push('restore '+String(e))}a9916ApplyVersion()}
+    return{ok:bad.length===0,build:A9916_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows,bad};
+  }
+
+  async function a9916Regression(){
+    const issues=[],own=a9916Probe(),previous={};if(!own.ok)issues.push('回憶蠟燭創角能力重製 probe 未通過');
+    try{previous.a9915=window.__A9915_TEST__?.audit?.()||{ok:false};if(!previous.a9915.ok)issues.push('Alpha99.15 BOSS/自動設定回歸失敗')}catch(e){previous.a9915={ok:false,error:String(e)};issues.push('Alpha99.15 audit 例外')}
+    try{previous.shop=window.__A9914_TEST__?.shopAudit?.()||{ok:false};if(!previous.shop.ok)issues.push('Alpha99.14 雜貨商回歸失敗')}catch(e){previous.shop={ok:false,error:String(e)};issues.push('Alpha99.14 shop 例外')}
+    try{previous.bag=window.__A9913_TEST__?.probe?.()||{ok:false};if(!previous.bag.ok)issues.push('Alpha99.13 背包強化回歸失敗')}catch(e){previous.bag={ok:false,error:String(e)};issues.push('Alpha99.13 probe 例外')}
+    try{previous.exp=window.__A9911_TEST__?.audit?.()||{ok:false};if(!previous.exp.ok)issues.push('Alpha99.11 EXP 回歸失敗')}catch(e){previous.exp={ok:false,error:String(e)};issues.push('Alpha99.11 audit 例外')}
+    try{previous.timers=window.__A9910_TEST__?.audit?.()||{ok:false};if(!previous.timers.ok)issues.push('Alpha99.10 計時器回歸失敗')}catch(e){previous.timers={ok:false,error:String(e)};issues.push('Alpha99.10 audit 例外')}
+    a9916ApplyVersion();return{ok:issues.length===0,build:A9916_BUILD,issues,own,previous};
+  }
+
+  const a9916ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9916ShowLoginBase.apply(this,arguments);a9916ApplyVersion();return r};
+  const a9916ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9916ShowSlotsBase.apply(this,arguments);a9916ApplyVersion();return r};
+  const a9916OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9916OpenCreateBase.apply(this,arguments);a9916ApplyVersion();return r};
+  const a9916EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9916EnterSlotBase.apply(this,arguments);a9916ApplyVersion();return r};
+  const a9916RenderBase=render;render=function(){const r=a9916RenderBase.apply(this,arguments);a9916ApplyVersion();return r};
+  a9916ApplyVersion();
+  window.__A9916_TEST__={build:A9916_BUILD,open:a9916Open,close:a9916Close,prepareUi:a9916PrepareUiTest,probe:a9916Probe,regression:a9916Regression,applyDraft:a9916ApplyDraft,sanitize:a9916SanitizeDraft,remaining:a9916Remain,applyVersion:a9916ApplyVersion,previous:window.__A9915_TEST__};
+})();
+
+
 })();
 </script>
 
