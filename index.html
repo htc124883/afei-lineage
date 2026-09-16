@@ -27809,6 +27809,1249 @@ const A9874_BUILD='B1.0 Alpha98.74';
   window.__A9874_TEST__={build:A9874_BUILD,audit:a9874Audit,fullRegression:a9874FullRegression,rewardPreview:a35RewardPreview};
 })();
 
+
+// =====================================================================
+// B1.0 Alpha98.76 — 基本設定恢復 A/B 介面切換
+// 同時把 Alpha98.75 的 visualViewport 同步搬回主閉包，避免外部 script 取不到 closure-local 函式。
+// =====================================================================
+const A9876_BUILD='B1.0 Alpha98.76';
+(function(){
+  // ----- Alpha98.75 mobile viewport runtime carry-forward -----
+  function a9876SyncViewport(){
+    const vv=window.visualViewport;
+    const h=Math.max(320,Math.round(vv?.height||window.innerHeight||720));
+    const o=Math.max(0,Math.round(vv?.offsetTop||0));
+    document.documentElement.style.setProperty('--a9875-vvh',h+'px');
+    document.documentElement.style.setProperty('--a9875-vvo',o+'px');
+  }
+  let a9876VvRaf=0;
+  function a9876QueueViewport(){cancelAnimationFrame(a9876VvRaf);a9876VvRaf=requestAnimationFrame(a9876SyncViewport)}
+  window.addEventListener('resize',a9876QueueViewport,{passive:true});
+  window.addEventListener('orientationchange',a9876QueueViewport,{passive:true});
+  try{window.visualViewport?.addEventListener('resize',a9876QueueViewport,{passive:true});window.visualViewport?.addEventListener('scroll',a9876QueueViewport,{passive:true})}catch(e){}
+  let a9876NpcObserver=null;
+  function a9876InstallNpcObserver(){
+    const box=document.getElementById('village-action');if(!box||a9876NpcObserver)return;
+    a9876NpcObserver=new MutationObserver(()=>{if(box.classList.contains('a972-open'))a9876QueueViewport()});
+    a9876NpcObserver.observe(box,{attributes:true,attributeFilter:['class']});
+  }
+
+  // ----- A/B mode UI -----
+  function a9876ModeHtml(){
+    const label=typeof a9812ModeLabel==='function'?a9812ModeLabel():'—';
+    return '<div class="a9876-interface-mode"><b>介面模式</b><small>A／B 只切換介面外觀，不會改變角色、戰鬥、掉落、掛機或存檔資料。選擇後立即生效，重新開啟遊戲也會保留。</small><div class="a9812-choice a9876-mode-choice"><button type="button" data-a9812-mode="classic">A · 原版介面<span>原本 CSS 版型</span></button><button type="button" data-a9812-mode="actmap">B · Actmap 介面<span>完整重製版型</span></button></div><div id="a9812-current" class="a9812-current">目前：'+label+'</div></div>';
+  }
+  function a9876InjectMode(h){
+    if(typeof h!=='string'||!h)return h;
+    if(h.includes('data-a9812-mode="classic"')&&h.includes('data-a9812-mode="actmap"'))return h;
+    const marker='<div class="a55-settings-section"><b>音效</b>';
+    // Alpha98.68 的基本設定就是 a55SettingsHtml；只有 basic 分頁會出現這個 marker。
+    if(h.includes(marker))return h.replace(marker,a9876ModeHtml()+marker);
+    return h;
+  }
+
+  const _a9876DrawerBase=drawerHtml;
+  drawerHtml=function(which){
+    const h=_a9876DrawerBase.apply(this,arguments);
+    return which==='settings'?a9876InjectMode(h):h;
+  };
+
+  const _a9876BindBase=bindDrawer;
+  bindDrawer=function(root){
+    const r=_a9876BindBase.apply(this,arguments);
+    root?.querySelectorAll?.('[data-a9812-mode]').forEach(b=>{
+      b.onclick=()=>{if(typeof a9812ApplyMode==='function')a9812ApplyMode(b.dataset.a9812Mode);};
+    });
+    try{a9812SyncButtons()}catch(e){}
+    return r;
+  };
+
+  function a9876ApplyVersion(){
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9876_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.76：A／B 介面切換重新放回「設定 → 基本設定」，切換立即生效並保留。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.76｜基本設定恢復 A／B 介面模式｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9876_BUILD+'</b><p>修正共同版設定頁把 A／B 介面入口蓋掉的問題；現在可在「設定 → 基本設定 → 介面模式」選擇 A 原版或 B Actmap。</p><p>切換只影響外觀，角色、掛機、戰鬥、掉落與存檔都不受影響；選擇會保存到瀏覽器。</p><small>本版未新增媒體素材；GitHub Pages 只需替換 index.html。</small>';
+    document.title=A41_BRAND+' · '+A9876_BUILD;
+  }
+
+  function a9876BasicProbeHtml(){
+    const base=typeof a55SettingsHtml==='function'?a55SettingsHtml():'<h3>設定</h3>';
+    return a9876InjectMode('<h3>設定</h3><div class="a9868-tabs"><button data-a9868-tab="basic" class="active">基本設定</button></div><div class="a9868-body">'+base.replace(/^<h3>設定<\/h3>/,'')+'</div>');
+  }
+  function a9876Audit(){
+    const issues=[];
+    const html=a9876BasicProbeHtml();
+    if(!html.includes('data-a9812-mode="classic"'))issues.push('基本設定缺少 A 介面按鈕');
+    if(!html.includes('data-a9812-mode="actmap"'))issues.push('基本設定缺少 B 介面按鈕');
+    if(!html.includes('介面模式'))issues.push('基本設定缺少介面模式標題');
+    if(typeof a9812ApplyMode!=='function')issues.push('A/B 切換函式遺失');
+    if(typeof a9812SyncButtons!=='function')issues.push('A/B 狀態同步函式遺失');
+    return{ok:issues.length===0,issues,build:A9876_BUILD,mode:typeof a9812ModeLabel==='function'?a9812ModeLabel():'—',basicHtmlHasMode:html.includes('a9876-interface-mode')};
+  }
+  function a9876ToggleProbe(){
+    if(typeof a9812ApplyMode!=='function')return{ok:false,reason:'missing apply'};
+    const before=A9812_MODE;
+    let aStored='',bStored='';
+    try{
+      a9812ApplyMode('classic',{silent:true,probe:false});try{aStored=localStorage.getItem('afei_a9812_hud_mode')||''}catch(e){}
+      a9812ApplyMode('actmap',{silent:true,probe:false});try{bStored=localStorage.getItem('afei_a9812_hud_mode')||''}catch(e){}
+      return{ok:aStored==='classic'&&bStored==='actmap',aStored,bStored};
+    }finally{try{a9812ApplyMode(before,{silent:true,probe:false})}catch(e){}}
+  }
+
+  const _a9876RenderBase=render;
+  render=function(){const r=_a9876RenderBase.apply(this,arguments);a9876ApplyVersion();a9876SyncViewport();a9876InstallNpcObserver();try{a9812SyncButtons()}catch(e){}return r};
+  const _a9876InitBase=init;
+  init=function(){const r=_a9876InitBase.apply(this,arguments);setTimeout(()=>{a9876ApplyVersion();a9876SyncViewport();a9876InstallNpcObserver();try{a9812SyncButtons()}catch(e){}},0);return r};
+
+  async function a9876FullRegression(){
+    let base={ok:true,skipped:true};
+    try{if(window.__A9874_TEST__?.fullRegression)base=await window.__A9874_TEST__.fullRegression()}catch(e){base={ok:false,error:String(e)}}
+    const own=a9876Audit();
+    a9876ApplyVersion();
+    return{ok:!!base.ok&&own.ok,build:A9876_BUILD,base,current:own};
+  }
+
+  a9876SyncViewport();setTimeout(a9876InstallNpcObserver,0);a9876ApplyVersion();
+  window.__A9876_TEST__={build:A9876_BUILD,audit:a9876Audit,toggleProbe:a9876ToggleProbe,fullRegression:a9876FullRegression,basicHtml:a9876BasicProbeHtml,inject:a9876InjectMode,syncViewport:a9876SyncViewport,previous:window.__A9874_TEST__};
+})();
+
+
+// =====================================================================
+// B1.0 Alpha98.77 — 全怪物掉落來源補完巡檢
+// 來源順位：live gamedata/HAR > 新阿肥公開資料站 > 舊阿肥已驗證補位；查不到就不猜。
+// =====================================================================
+const A9877_BUILD='B1.0 Alpha98.77';
+(function(){
+  const A9877_SOURCE={
+    policy:'live gamedata/HAR > 新阿肥 monsters.html/data.js > 舊阿肥已驗證補位；缺資料不猜',
+    publicMonsters:'https://zxc518zxc.github.io/monsters.html',
+    note:'monsters.html 只呈現 WIKI.mobs 已公開的 drops；單機歷史/特殊怪不保證全部覆蓋。'
+  };
+
+  // 舊阿肥公開資料曾明確補過「遺忘之島巨大牛人」；新阿肥目前沒有同名現行表時才補。
+  // 這不是把一般牛人掉落硬套過來，而是沿用既有 public-data supplement 的逐項機率。
+  const A9877_BIG_TAURUS_PUBLIC_DROPS=[
+    ['glv_glove',30],['wpn_katana',30],['amr_plate',30],['new_item_158',30],['new_item_157',30],['scroll_weapon',30],['scroll_armor',30],
+    ['new_item_159',10],['acc_127',5],['bk_elf_blazewpn',5],['bk_full_heal',5],['bk_berserk',5],['bk_bless_wpn',5],['amu_str',2],
+    ['wpn_greatsword',1],['blt_body',1],['bk_elf_stormshot',1],['wpn_taurus_axe',0.5],['item_ancient_scroll',0.5],['item_unknown_spear',0.1]
+  ];
+  function a9877EnsureVerifiedSupplements(){
+    DATA.dropsByMobName=DATA.dropsByMobName||{};
+    const key='遺忘之島巨大牛人';
+    let added=false;
+    if(!Array.isArray(DATA.dropsByMobName[key])||!DATA.dropsByMobName[key].length){
+      const rows=A9877_BIG_TAURUS_PUBLIC_DROPS.filter(([id])=>!!DATA.items?.[id]);
+      if(rows.length){DATA.dropsByMobName[key]=rows;added=true;}
+    }
+    DATA._meta=DATA._meta||{};
+    DATA._meta.a9877DropSource={
+      build:A9877_BUILD,sourcePolicy:A9877_SOURCE.policy,
+      bigTaurus:{source:'舊阿肥 public-data supplement（新阿肥缺表時補位）',added,rows:(DATA.dropsByMobName[key]||[]).length}
+    };
+    return DATA._meta.a9877DropSource;
+  }
+  a9877EnsureVerifiedSupplements();
+
+  const A9877_GIANT_PROTECTED=new Set(['giant','giant_warrior','giant_elder']);
+  const A9877_SPECIAL_IDS=new Set([
+    'pride_stairs',
+    'siege_aton','siege_esti','siege_gate','siege_gate_heine','siege_gate_ww','siege_grit','siege_joe','siege_julian','siege_ovi','siege_senis',
+    'siege_tower','siege_tower_heine','siege_tower_ww','siege_tros'
+  ]);
+  const A9877_CONFIRMED_ALIAS={
+    // Alpha80 已依夢幻之島地圖做 map-specific alias；這裡只給巡檢器同一份語意。
+    'nm_031':{table:'夢幻之島地精靈王',source:'新阿肥/既有夢幻之島專屬表',kind:'confirmed-alias'}
+  };
+  const A9877_VERIFIED_SUPPLEMENT={
+    'obli_bigtaurus':{table:'遺忘之島巨大牛人',source:'舊阿肥公開資料補位',kind:'old-afei-supplement'}
+  };
+
+  function a9877MapMobIds(){
+    const ids=new Set();
+    for(const mp of Object.values(DATA.maps||{})){
+      if(Array.isArray(mp)){for(const id of mp)if(typeof id==='string')ids.add(id);continue;}
+      if(!mp||typeof mp!=='object')continue;
+      for(const k of ['mobs','mobIds','monsters'])for(const id of (Array.isArray(mp[k])?mp[k]:[]))if(typeof id==='string')ids.add(id);
+    }
+    return [...ids];
+  }
+  function a9877MobDropStatus(mid){
+    const mob=DATA.mobs?.[mid];if(!mob)return{mid,name:mid,kind:'broken-mob-ref',source:'地圖引用不存在怪物'};
+    const name=String(mob.n||mid),direct=DATA.dropsByMobName?.[name];
+    if(Array.isArray(direct)&&direct.length)return{mid,name,kind:'direct',table:name,source:name==='遺忘之島巨大牛人'?'舊阿肥公開資料補位':'現有阿肥掉落表',rows:direct.length};
+    const al=A9877_CONFIRMED_ALIAS[mid];
+    if(al&&Array.isArray(DATA.dropsByMobName?.[al.table])&&DATA.dropsByMobName[al.table].length)return{mid,name,...al,rows:DATA.dropsByMobName[al.table].length};
+    const sup=A9877_VERIFIED_SUPPLEMENT[mid];
+    if(sup&&Array.isArray(DATA.dropsByMobName?.[sup.table])&&DATA.dropsByMobName[sup.table].length)return{mid,name,...sup,rows:DATA.dropsByMobName[sup.table].length};
+    if(A9877_GIANT_PROTECTED.has(mid))return{mid,name,kind:'source-protected-missing',source:'新阿肥未確認精確掉落/機率，維持來源保護，不猜'};
+    if(A9877_SPECIAL_IDS.has(mid))return{mid,name,kind:'special-system-unit',source:'攻城/樓梯等特殊系統單位；不自動套一般怪掉落'};
+    return{mid,name,kind:'source-missing',source:'目前新阿肥公開/現有表沒有可安全採用的同名掉落；不猜'};
+  }
+  function a9877DropAudit(){
+    a9877EnsureVerifiedSupplements();
+    const itemIssues=[],rateIssues=[],emptyTables=[];
+    for(const [name,rows] of Object.entries(DATA.dropsByMobName||{})){
+      if(!Array.isArray(rows)||!rows.length){emptyTables.push(name);continue;}
+      for(const row of rows){
+        const id=row?.[0],ch=Number(row?.[1]);
+        if(!DATA.items?.[id])itemIssues.push(name+' → '+String(id));
+        if(!Number.isFinite(ch)||ch<0||ch>100)rateIssues.push(name+' → '+String(id)+' = '+String(row?.[1]));
+      }
+    }
+    const spawned=a9877MapMobIds().map(a9877MobDropStatus);
+    const byKind={};for(const r of spawned)(byKind[r.kind]||(byKind[r.kind]=[])).push(r);
+    const unresolved=[...(byKind['source-missing']||[]),...(byKind['source-protected-missing']||[])];
+    const broken=byKind['broken-mob-ref']||[];
+    return{
+      ok:itemIssues.length===0&&rateIssues.length===0&&emptyTables.length===0&&broken.length===0,
+      build:A9877_BUILD,source:A9877_SOURCE,
+      totals:{items:Object.keys(DATA.items||{}).length,mobs:Object.keys(DATA.mobs||{}).length,maps:Object.keys(DATA.maps||{}).length,dropTables:Object.keys(DATA.dropsByMobName||{}).length,spawnedMobs:spawned.length},
+      counts:Object.fromEntries(Object.entries(byKind).map(([k,v])=>[k,v.length])),
+      itemIssues,rateIssues,emptyTables,broken,unresolved,
+      classified:spawned
+    };
+  }
+  function a9877ApplyVersion(){
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9877_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.77：全怪物掉落來源巡檢；只補有來源的缺口，查不到的不亂猜。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.77｜全怪物掉落來源補完巡檢｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9877_BUILD+'</b><p>依來源順位巡檢所有地圖怪物掉落：現有掉落表、夢幻之島專屬映射、特殊系統單位、來源保護與資料缺口分開標記。</p><p>本版只補「遺忘之島巨大牛人」既有公開資料補位；其他新阿肥沒有可靠掉落率的怪物維持缺失，不自行套用同名普通怪。</p><small>本版未新增媒體素材；GitHub Pages 只需替換 index.html。</small>';
+    document.title=A41_BRAND+' · '+A9877_BUILD;
+  }
+  const _a9877RenderBase=render;
+  render=function(){const r=_a9877RenderBase.apply(this,arguments);a9877ApplyVersion();return r};
+  const _a9877InitBase=init;
+  init=function(){const r=_a9877InitBase.apply(this,arguments);setTimeout(a9877ApplyVersion,0);return r};
+  async function a9877FullRegression(){
+    const checks={ab:{ok:true,skipped:true},npc:{ok:true,skipped:true},ui:{ok:true,skipped:true}};
+    try{if(window.__A9876_TEST__?.audit)checks.ab=window.__A9876_TEST__.audit()}catch(e){checks.ab={ok:false,issues:[String(e)]}}
+    try{if(window.__A9855_TEST__?.npcAudit)checks.npc=await window.__A9855_TEST__.npcAudit()}catch(e){checks.npc={ok:false,issues:[String(e)]}}
+    try{if(typeof a74CriticalUiAudit==='function')checks.ui=a74CriticalUiAudit()}catch(e){checks.ui={ok:false,issues:[String(e)]}}
+    const own=a9877DropAudit();a9877ApplyVersion();
+    const ok=own.ok&&Object.values(checks).every(x=>x?.ok!==false);
+    return{ok,build:A9877_BUILD,checks,current:own};
+  }
+  a9877ApplyVersion();
+  window.__A9877_TEST__={build:A9877_BUILD,source:A9877_SOURCE,audit:a9877DropAudit,fullRegression:a9877FullRegression,status:a9877MobDropStatus,supplement:a9877EnsureVerifiedSupplements};
+})();
+
+// =====================================================================
+// B1.0 Alpha98.78 — 新/舊阿肥怪物掉落校正 + 4 地區掉落獨立判定
+// 嚴格分層：現行/新阿肥直接表 > 舊阿肥已驗證 fallback；世界王資料不在本層改寫。
+// =====================================================================
+const A9878_BUILD='B1.0 Alpha98.78';
+(function(){
+  const A9878_SOURCE={
+    policy:'live gamedata/HAR > 新阿肥 monsters.html/data.js > 舊阿肥怪物掉落圖鑑 fallback；缺資料不猜',
+    newSite:'https://zxc518zxc.github.io/monsters.html',
+    oldSite:'https://toudhue.github.io/my-web/%E6%80%AA%E7%89%A9%E6%8E%89%E8%90%BD%E5%9C%96%E9%91%91.html',
+    rule:'一般怪物、世界王、地區掉落三種來源分開；地區掉落不寫入 dropsByMobName。'
+  };
+  const A9878_WORLD_BOSS_BEFORE=JSON.stringify(DATA.worldBosses||{});
+  const A9878_OLD_FALLBACKS={"遺忘之島蜥蜴人":[["item_forgotten_robe",0.001]],"遺忘之島鱷魚":[["arm_95",0.01]],"遺忘之島夏洛伯":[["bk_sleep_mist",0.02],["item_forgotten_scale",0.001]],"遺忘之島狼人":[["item_forgotten_scale",0.001]],"遺忘之島黑暗精靈":[["rng_mr",0.03],["hlm_wind",0.01],["mat_black_mithril",0.01],["item_forgotten_leather",0.001]],"遺忘之島歐熊":[["item_forgotten_leather",0.001]],"遺忘之島卡司特":[["item_forgotten_leather",0.001],["new_item_191",0.0001]],"遺忘之島巨斧牛人":[["rng_mr",0.03],["item_forgotten_scale",0.001],["new_item_191",0.0001],["item_ancient_scroll",1e-05]],"遺忘之島食人妖精":[["item_forgotten_robe",0.001],["acc_demonbane",0.001]],"遺忘之島蛇女":[["new_item_221",0.3],["arm_95",0.01],["item_forgotten_robe",0.001],["item_forgotten_scale",0.001]],"遺忘之島萊肯":[["rng_mr",0.03],["hlm_wind",0.01],["item_forgotten_leather",0.001]],"遺忘之島楊果里恩":[["rng_mr",0.03],["item_forgotten_leather",0.001]],"遺忘之島哈維":[["arm_95",0.01],["rng_harpy",0.0002]],"遺忘之島格利芬":[["mat_griffon_feather",0.02],["hlm_wind",0.01],["item_forgotten_xbow",0.001],["item_forgotten_robe",0.001],["acc_demonbane",0.001],["new_item_193",0.0002]],"遺忘之島鏈鎚牛人":[["rng_mr",0.03],["item_forgotten_plate",0.001],["new_item_191",0.0001],["item_ancient_scroll",1e-05]],"遺忘之島卡司特王":[["rng_mr",0.03],["item_forgotten_leather",0.001]],"遺忘之島巨大鱷魚":[["rng_mr",0.03],["arm_95",0.01],["item_forgotten_plate",0.001]],"遺忘之島變形怪":[["acc_demonbane",0.001],["item_ancient_scroll",1e-05]],"遺忘之島多羅":[["acc_132",0.03],["item_forgotten_scale",0.001]],"遺忘之島阿魯巴":[["item_forgotten_scale",0.001],["acc_demonbane",0.001],["item_forgotten_greatsword",0.0001]],"遺忘之島食人妖精王":[["rng_mr",0.03],["item_forgotten_plate",0.001],["new_item_192",1e-05]],"遺忘之島亞力安":[["item_forgotten_sword",0.001],["item_forgotten_plate",0.001],["acc_demonbane",0.001],["glv_dk",0.0001],["item_ancient_scroll",1e-05]],"遺忘之島邪惡蜥蜴":[["item_forgotten_sword",0.001],["item_forgotten_robe",0.001],["acc_demonbane",0.001],["glv_demon",0.0001],["item_ancient_scroll",2e-05]],"遺忘之島獨眼巨人":[["item_forgotten_greatsword",0.001],["item_forgotten_plate",0.001],["acc_demonbane",0.001]],"遺忘之島飛龍":[["rng_mr",0.1],["hlm_wind",0.005],["glv_dk",0.003],["acc_demonbane",0.002],["item_forgotten_xbow",0.001],["item_forgotten_leather",0.001],["glv_demon",0.001],["new_item_192",0.0001],["item_ancient_scroll",5e-05]],"巨人":[["acc_127",0.05],["acc_129",0.05],["acc_128",0.05],["arm_110",0.01],["blt_body",0.01],["acc_131",0.01],["acc_130",0.01],["blt_titan",0.005]],"巨人戰士":[["acc_127",0.08],["acc_129",0.08],["acc_128",0.08],["blt_body",0.03],["acc_131",0.03],["acc_130",0.03],["arm_110",0.02],["blt_titan",0.008]],"巨人長老":[["acc_127",0.1],["acc_129",0.1],["acc_128",0.1],["blt_body",0.05],["acc_131",0.05],["acc_130",0.05],["arm_110",0.03],["blt_titan",0.01]]};
+  const A9878_BIG_TAURUS_EXACT=[["wpn_katana",3],["amr_plate",3],["glv_glove",3],["new_item_157",3],["new_item_158",3],["scroll_weapon",3],["scroll_armor",3],["new_item_159",1],["acc_127",0.5],["bk_bless_wpn",0.5],["bk_berserk",0.5],["bk_full_heal",0.5],["bk_elf_blazewpn",0.5],["amu_str",0.2],["wpn_greatsword",0.1],["blt_body",0.1],["bk_elf_stormshot",0.1],["wpn_taurus_axe",0.05],["item_unknown_spear",0.01],["item_ancient_scroll",0.005]];
+  const A9878_REGION_DROPS={"妖精森林周邊":[["new_item_164",20],["new_item_195",20],["new_item_165",20]],"眠龍洞穴1樓":[["new_item_164",20],["new_item_195",20],["new_item_165",20]],"眠龍洞穴2樓":[["new_item_164",20],["new_item_195",20],["new_item_165",20]],"眠龍洞穴3樓":[["new_item_164",20],["new_item_195",20],["new_item_165",20]]};
+  const A9878_REGION_MAP_NAMES=new Set(Object.keys(A9878_REGION_DROPS));
+  const A9878_SPECIAL_IDS=new Set([
+    'pride_stairs',
+    'siege_aton','siege_esti','siege_gate','siege_gate_heine','siege_gate_ww','siege_grit','siege_joe','siege_julian','siege_ovi','siege_senis',
+    'siege_tower','siege_tower_heine','siege_tower_ww','siege_tros'
+  ]);
+  const A9878_APPLIED=new Map();
+  let A9878_BIG_TAURUS_CORRECTED=false;
+
+  function a9878RowsEqual(a,b){
+    if(!Array.isArray(a)||!Array.isArray(b)||a.length!==b.length)return false;
+    for(let i=0;i<a.length;i++)if(String(a[i]?.[0])!==String(b[i]?.[0])||Number(a[i]?.[1])!==Number(b[i]?.[1]))return false;
+    return true;
+  }
+  function a9878ApplySourceData(){
+    DATA.dropsByMobName=DATA.dropsByMobName||{};
+    // Alpha98.77 的舊阿肥巨大牛人補位把百分比誤放大 10 倍；只有確定是 98.77 自己補進來時才校正，
+    // 絕不覆蓋原本就存在的現行/新阿肥直接表。
+    const oldMeta=DATA._meta?.a9877DropSource?.bigTaurus;
+    if(oldMeta?.added===true){
+      DATA.dropsByMobName['遺忘之島巨大牛人']=A9878_BIG_TAURUS_EXACT.map(r=>r.slice());
+      A9878_BIG_TAURUS_CORRECTED=true;
+      A9878_APPLIED.set('遺忘之島巨大牛人','舊阿肥精確表（修正 Alpha98.77 ×10 誤差）');
+    }
+    for(const [name,rows] of Object.entries(A9878_OLD_FALLBACKS)){
+      const cur=DATA.dropsByMobName[name];
+      if(Array.isArray(cur)&&cur.length)continue; // 新/現行表優先
+      const clean=rows.filter(r=>DATA.items?.[r[0]]&&Number.isFinite(Number(r[1]))&&Number(r[1])>=0&&Number(r[1])<=100).map(r=>[r[0],Number(r[1])]);
+      if(clean.length){
+        DATA.dropsByMobName[name]=clean;
+        A9878_APPLIED.set(name,'舊阿肥怪物掉落圖鑑 fallback');
+      }
+    }
+    DATA._meta=DATA._meta||{};
+    DATA._meta.a9878DropSource={
+      build:A9878_BUILD,sourcePolicy:A9878_SOURCE.policy,
+      oldFallbackApplied:[...A9878_APPLIED.entries()].map(([name,source])=>({name,source,rows:(DATA.dropsByMobName[name]||[]).length})),
+      bigTaurusCorrected:A9878_BIG_TAURUS_CORRECTED,
+      regionDrops:Object.fromEntries(Object.entries(A9878_REGION_DROPS).map(([name,rows])=>[name,rows.map(r=>r.slice())])),
+      regionRule:'擊殺該地區任意一般怪物後，三項各自獨立判定 20%；不併入怪物個別掉落表。',
+      worldBossTablesModified:false
+    };
+    return DATA._meta.a9878DropSource;
+  }
+  a9878ApplySourceData();
+
+
+  // 舊阿肥圖鑑明示「機率為單筆獨立判定%」。
+  // 只對本版實際採用的舊阿肥 fallback 表改為逐列獨立 roll；
+  // 現行/新阿肥直接表不在沒有明確規則證據時擅自改抽法。
+  const _a9878LegacySingleRollBase=rollDrop;
+  rollDrop=function(m){
+    const name=String(m?.n||''),key=typeof a80DropKey==='function'?String(a80DropKey(m)||name):name;
+    if(!A9878_APPLIED.has(key)&&!A9878_APPLIED.has(name))return _a9878LegacySingleRollBase(m);
+    const tableName=A9878_APPLIED.has(key)?key:name,rows=DATA.dropsByMobName?.[tableName];
+    if(!Array.isArray(rows)||!rows.length)return _a9878LegacySingleRollBase(m);
+    const had=Object.prototype.hasOwnProperty.call(DATA.dropsByMobName,tableName),original=rows;
+    let first=null;
+    try{
+      for(const row of original.slice()){
+        DATA.dropsByMobName[tableName]=[row];
+        const id=_a9878LegacySingleRollBase(m);
+        if(id&&!first)first=id;
+      }
+      return first;
+    }finally{
+      if(had)DATA.dropsByMobName[tableName]=original;else delete DATA.dropsByMobName[tableName];
+    }
+  };
+
+  function a9878RegionRows(mapId){
+    const name=String(mapTitle(mapId)||'');
+    const rows=A9878_REGION_DROPS[name];
+    return Array.isArray(rows)?rows:[];
+  }
+  function a9878RollRegionDrops(mapId,rng=Math.random){
+    const got=[];
+    for(const [id,pct] of a9878RegionRows(mapId)){
+      const x=Number(rng());
+      if(Number.isFinite(x)&&x*100<Number(pct))got.push(id);
+    }
+    return got;
+  }
+  function a9878GrantRegionDrops(mapId){
+    const rows=a9878RollRegionDrops(mapId);
+    if(!rows.length)return [];
+    const area=String(mapTitle(mapId)||mapId||'');
+    const got=[];
+    for(const id of rows){
+      if(!DATA.items?.[id])continue;
+      const ok=typeof a8Add==='function'?a8Add(id,1):((state.inventory[id]=(Number(state.inventory[id])||0)+1),true);
+      if(!ok)continue;
+      state.session.items=Number(state.session.items||0)+1;
+      const name=DATA.items[id]?.n||id;
+      log('【地區掉落】'+area+'：獲得 '+name,'gain');
+      if(!(typeof A45_SIM_NOW!=='undefined'&&A45_SIM_NOW>0)){
+        try{if(typeof a67ShowDrop==='function')a67ShowDrop(id,1)}catch(e){}
+      }
+      try{if(typeof a70RecordLoot==='function')a70RecordLoot(id,1,'region',{mob:'地區掉落',area})}catch(e){}
+      got.push(id);
+    }
+    return got;
+  }
+
+  // 地區掉落只在「真實擊殺成功」後額外判定；前景與 Alpha45 離線 replay 都會走 killMob，
+  // 所以兩邊共用同一規則，不另外造一套離線收益公式。
+  const _a9878KillBase=killMob;
+  killMob=function(i){
+    const mapBefore=String(state?.mapId||''),k0=Number(state?.session?.kills||0);
+    const r=_a9878KillBase.apply(this,arguments);
+    const k1=Number(state?.session?.kills||0);
+    if(k1>k0&&String(state?.mapId||'')===mapBefore&&A9878_REGION_MAP_NAMES.has(String(mapTitle(mapBefore)||''))){
+      try{a9878GrantRegionDrops(mapBefore)}catch(e){try{console.warn('Alpha98.78 region drop',e)}catch(_e){}}
+    }
+    return r;
+  };
+
+  function a9878MapMobIds(){
+    const ids=new Set();
+    for(const mp of Object.values(DATA.maps||{})){
+      if(Array.isArray(mp)){for(const id of mp)if(typeof id==='string')ids.add(id);continue}
+      if(!mp||typeof mp!=='object')continue;
+      for(const k of ['mobs','mobIds','monsters'])for(const id of (Array.isArray(mp[k])?mp[k]:[]))if(typeof id==='string')ids.add(id);
+    }
+    return [...ids];
+  }
+  function a9878Status(mid){
+    const mob=DATA.mobs?.[mid];if(!mob)return{mid,name:mid,kind:'broken-mob-ref'};
+    const name=String(mob.n||mid);
+    if(String(state?.mapId||'')==='dream_island'&&typeof a80DropKey==='function'){
+      const key=a80DropKey(mob,'dream_island');
+      if(key!==name&&Array.isArray(DATA.dropsByMobName?.[key])&&DATA.dropsByMobName[key].length)return{mid,name,kind:'confirmed-alias',table:key};
+    }
+    const direct=DATA.dropsByMobName?.[name];
+    if(Array.isArray(direct)&&direct.length)return{mid,name,kind:A9878_APPLIED.has(name)?'old-afei-fallback':'direct-current',rows:direct.length,source:A9878_APPLIED.get(name)||'現行/新阿肥既有表'};
+    if(mid==='nm_031'&&Array.isArray(DATA.dropsByMobName?.['夢幻之島地精靈王'])&&DATA.dropsByMobName['夢幻之島地精靈王'].length)return{mid,name,kind:'confirmed-alias',table:'夢幻之島地精靈王'};
+    if(A9878_SPECIAL_IDS.has(mid))return{mid,name,kind:'special-system-unit'};
+    return{mid,name,kind:'source-missing'};
+  }
+  function a9878RegionAudit(){
+    const issues=[],rows=[];
+    for(const [name,rr] of Object.entries(A9878_REGION_DROPS)){
+      const mapIds=[];for(const [cat,list] of Object.entries(DATA.mapCategories||{}))for(const e of (list||[]))if(e?.t===name)mapIds.push(e.v);
+      const okMap=mapIds.length===1,okRows=rr.length===3&&rr.every(([id,p])=>!!DATA.items?.[id]&&Number(p)===20);
+      if(!okMap)issues.push(name+' 對應地圖 ID 數量='+mapIds.length);
+      if(!okRows)issues.push(name+' 地區掉落不是 3 項各 20%');
+      rows.push({name,mapIds,items:rr.map(([id,p])=>({id,name:DATA.items?.[id]?.n||id,pct:p})),ok:okMap&&okRows});
+    }
+    // 地區掉落不得被塞進任何怪物表；只檢查「三項同時 20%」的整組污染，避免正常怪物本來就會掉其中單項而誤報。
+    const pollution=[];
+    for(const [mob,rr] of Object.entries(DATA.dropsByMobName||{})){
+      const sig=new Map((rr||[]).map(r=>[r?.[0],Number(r?.[1])]));
+      if(sig.get('new_item_164')===20&&sig.get('new_item_195')===20&&sig.get('new_item_165')===20)pollution.push(mob);
+    }
+    if(pollution.length)issues.push('地區掉落被誤塞進怪物表：'+pollution.join('、'));
+    const mapId=rows.find(r=>r.name==='妖精森林周邊')?.mapIds?.[0]||'zone_01';
+    const hit=a9878RollRegionDrops(mapId,()=>0.10),miss=a9878RollRegionDrops(mapId,()=>0.20),outside=a9878RollRegionDrops('training',()=>0);
+    if(hit.length!==3)issues.push('地區掉落 10% deterministic probe 應三項全中');
+    if(miss.length!==0)issues.push('地區掉落 20% 邊界 deterministic probe 應全不掉');
+    if(outside.length!==0)issues.push('非指定地區不應有地區掉落');
+    return{ok:issues.length===0,issues,rows,probe:{hit,miss,outside}};
+  }
+  function a9878DropAudit(){
+    a9878ApplySourceData();
+    const itemIssues=[],rateIssues=[],emptyTables=[];
+    for(const [name,rows] of Object.entries(DATA.dropsByMobName||{})){
+      if(!Array.isArray(rows)||!rows.length){emptyTables.push(name);continue}
+      for(const row of rows){
+        const id=row?.[0],pct=Number(row?.[1]);
+        if(!DATA.items?.[id])itemIssues.push(name+' → '+String(id));
+        if(!Number.isFinite(pct)||pct<0||pct>100)rateIssues.push(name+' → '+String(id)+' = '+String(row?.[1]));
+      }
+    }
+    const exactBig=a9878RowsEqual(DATA.dropsByMobName?.['遺忘之島巨大牛人'],A9878_BIG_TAURUS_EXACT);
+    if(!exactBig)itemIssues.push('遺忘之島巨大牛人未套用舊阿肥精確機率');
+    const spawned=a9878MapMobIds().map(a9878Status),byKind={};
+    for(const r of spawned)(byKind[r.kind]||(byKind[r.kind]=[])).push(r);
+    const unresolved=byKind['source-missing']||[];
+    const region=a9878RegionAudit();
+    const worldBossUnchanged=JSON.stringify(DATA.worldBosses||{})===A9878_WORLD_BOSS_BEFORE;
+    const expectedUnresolved=['變種亞力安','邪惡思克巴','火焰之靈魂(藍)'];
+    const unresolvedNames=unresolved.map(x=>x.name).sort(),expected=expectedUnresolved.slice().sort();
+    const unresolvedExact=JSON.stringify(unresolvedNames)===JSON.stringify(expected);
+    const issues=[];
+    if(itemIssues.length)issues.push('掉落表物品/精確表問題 '+itemIssues.length);
+    if(rateIssues.length)issues.push('非法掉落率 '+rateIssues.length);
+    if(emptyTables.length)issues.push('空掉落表 '+emptyTables.length);
+    if(!region.ok)issues.push(...region.issues);
+    if(!worldBossUnchanged)issues.push('本版誤改 DATA.worldBosses');
+    if(!unresolvedExact)issues.push('未解怪物不是預期 3 隻：'+unresolvedNames.join('、'));
+    return{
+      ok:issues.length===0,build:A9878_BUILD,issues,source:A9878_SOURCE,
+      corrections:{bigTaurusCorrected:A9878_BIG_TAURUS_CORRECTED,oldFallbackApplied:[...A9878_APPLIED.keys()],oldFallbackCount:A9878_APPLIED.size},
+      totals:{items:Object.keys(DATA.items||{}).length,mobs:Object.keys(DATA.mobs||{}).length,maps:Object.keys(DATA.maps||{}).length,dropTables:Object.keys(DATA.dropsByMobName||{}).length,spawnedMobs:spawned.length,worldBossConfigs:Object.keys(DATA.worldBosses||{}).length},
+      counts:Object.fromEntries(Object.entries(byKind).map(([k,v])=>[k,v.length])),
+      unresolved,itemIssues,rateIssues,emptyTables,region,worldBossUnchanged,exactBig,classified:spawned
+    };
+  }
+  async function a9878KillRegionProbe(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0;
+    const oldRandom=Math.random,oldShow=typeof a67ShowDrop==='function'?a67ShowDrop:null,oldRecord=typeof a70RecordLoot==='function'?a70RecordLoot:null;
+    try{
+      if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+      a76TestReset('knight',80);state.mapId='zone_01';state.inVillage=false;state.dead=false;state.running=true;state.player.hp=1e9;state.player.maxHp=1e9;
+      const mid=(DATA.maps?.zone_01||[]).find(id=>DATA.mobs?.[id]&&!DATA.mobs[id].boss);if(!mid)return{ok:false,reason:'zone_01 no normal mob'};
+      state.mobs=[{id:mid,hp:0,maxHp:1,dead:false,clip:'idle',frame:0,ft:0,hitFlash:0,nextAtk:999999999}];state.target=0;
+      const before={a:a8Count('new_item_164'),b:a8Count('new_item_195'),c:a8Count('new_item_165'),k:Number(state.session.kills||0)};
+      let n=0;Math.random=()=>{n++;return n<=2?0.99:0.10}; // 前兩次留給金幣/既有怪物抽樣；後續 10% 讓三項地區掉落必中
+      if(oldShow)a67ShowDrop=function(){};
+      if(oldRecord)a70RecordLoot=function(){};
+      killMob(0);
+      const after={a:a8Count('new_item_164'),b:a8Count('new_item_195'),c:a8Count('new_item_165'),k:Number(state.session.kills||0)};
+      const ok=after.k===before.k+1&&after.a>=before.a+1&&after.b>=before.b+1&&after.c>=before.c+1;
+      return{ok,before,after,map:mapTitle('zone_01'),mob:DATA.mobs[mid]?.n||mid};
+    }catch(e){return{ok:false,error:String(e?.stack||e)}}
+    finally{
+      Math.random=oldRandom;if(oldShow)a67ShowDrop=oldShow;if(oldRecord)a70RecordLoot=oldRecord;
+      try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage)}catch(e){}
+      try{if(snap){state=snap;if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;derive();render()}}catch(e){}
+    }
+  }
+
+
+  async function a9878OldIndependentProbe(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0;
+    const oldRandom=Math.random,oldShow=typeof a67ShowDrop==='function'?a67ShowDrop:null,oldRecord=typeof a70RecordLoot==='function'?a70RecordLoot:null,oldLog=log;
+    try{
+      if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+      a76TestReset('knight',80);state.sherineWorld=false;state.mapId='training';state.inVillage=false;
+      const mob=DATA.mobs?.giant,rows=(DATA.dropsByMobName?.['巨人']||[]).map(r=>r.slice());
+      if(!mob||rows.length<2)return{ok:false,reason:'巨人 fallback unavailable',rows:rows.length};
+      const before=Object.fromEntries(rows.map(([id])=>[id,a8Count(id)]));
+      Math.random=()=>0;log=function(){};
+      if(oldShow)a67ShowDrop=function(){};
+      if(oldRecord)a70RecordLoot=function(){};
+      const first=rollDrop(mob),after=Object.fromEntries(rows.map(([id])=>[id,a8Count(id)]));
+      const missed=rows.filter(([id])=>after[id]!==before[id]+1).map(([id])=>id);
+      return{ok:missed.length===0&&!!first,first,rows:rows.length,missed,before,after};
+    }catch(e){return{ok:false,error:String(e?.stack||e)}}
+    finally{
+      Math.random=oldRandom;log=oldLog;if(oldShow)a67ShowDrop=oldShow;if(oldRecord)a70RecordLoot=oldRecord;
+      try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage)}catch(e){}
+      try{if(snap){state=snap;if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;derive();render()}}catch(e){}
+    }
+  }
+
+  async function a9878OfflineRegionProbe(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0;
+    const oldRandom=Math.random,oldShow=typeof a67ShowDrop==='function'?a67ShowDrop:null,oldRecord=typeof a70RecordLoot==='function'?a70RecordLoot:null;
+    try{
+      if(typeof a76TestReset!=='function'||typeof a45ReplayChunk!=='function')return{ok:false,skipped:true,reason:'offline replay helpers unavailable'};
+      a76TestReset('knight',80);state.mapId='zone_01';state.inVillage=false;state.dead=false;state.running=true;
+      state.player.maxHp=1e9;state.player.hp=1e9;state.player.maxMp=1e9;state.player.mp=1e9;
+      state.player.stats=state.player.stats||{};state.player.stats.str=1000;derive();state.player.maxHp=1e9;state.player.hp=1e9;
+      spawnAll();
+      const before={k:Number(state.session.kills||0),a:a8Count('new_item_164'),b:a8Count('new_item_195'),c:a8Count('new_item_165')};
+      Math.random=()=>0.10;
+      if(oldShow)a67ShowDrop=function(){};
+      if(oldRecord)a70RecordLoot=function(){};
+      if(typeof a77ResetPerfSchedulers==='function')a77ResetPerfSchedulers(0);
+      A45_SIM_NOW=0;A45_SIM_EPOCH=1700000000000;
+      const done=a45ReplayChunk(60000);
+      const after={k:Number(state.session.kills||0),a:a8Count('new_item_164'),b:a8Count('new_item_195'),c:a8Count('new_item_165')};
+      const ok=done>0&&after.k>before.k&&after.a>before.a&&after.b>before.b&&after.c>before.c;
+      return{ok,done,before,after,map:'妖精森林周邊'};
+    }catch(e){return{ok:false,error:String(e?.stack||e)}}
+    finally{
+      Math.random=oldRandom;if(oldShow)a67ShowDrop=oldShow;if(oldRecord)a70RecordLoot=oldRecord;
+      try{A45_SIM_NOW=0;A45_SIM_EPOCH=0}catch(e){}
+      try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage)}catch(e){}
+      try{if(snap){state=snap;if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;derive();render()}}catch(e){}
+    }
+  }
+
+  function a9878ApplyVersion(){
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9878_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.78：新/舊阿肥怪物掉落分層校正，補回遺忘之島/巨人舊阿肥 fallback，並加入 4 地區獨立掉落。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.78｜怪物掉落＋4地區掉落校正｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9878_BUILD+'</b><p>掉落來源分層：現行／新阿肥直接表優先；缺表才採舊阿肥已驗證 fallback。本版修正 Alpha98.77「遺忘之島巨大牛人」機率誤放大 10 倍，並補回 25 隻遺忘之島怪＋3 隻巨人系舊阿肥表；舊阿肥 fallback 依圖鑑明示採「單筆獨立判定%」。</p><p>舊阿肥 4 個地區掉落改為獨立判定：妖精森林周邊、眠龍洞穴 1～3 樓，每次擊殺額外各自判定 粗糙的米索莉塊／精靈玉／元素石 20%。不會把地區掉落塞進怪物個別表，也不改世界王設定。</p><small>仍缺可靠來源：變種亞力安、邪惡思克巴、火焰之靈魂(藍)。本版未新增媒體；GitHub Pages 只需替換 index.html。</small>';
+    document.title=A41_BRAND+' · '+A9878_BUILD;
+  }
+  const _a9878RenderBase=render;
+  render=function(){const r=_a9878RenderBase.apply(this,arguments);a9878ApplyVersion();return r};
+  const _a9878InitBase=init;
+  init=function(){const r=_a9878InitBase.apply(this,arguments);setTimeout(a9878ApplyVersion,0);return r};
+
+  async function a9878FullRegression(){
+    const own=a9878DropAudit();
+    let prior={ok:true,skipped:true},npc={ok:true,skipped:true},ab={ok:true,skipped:true},regionKill={ok:true,skipped:true},offlineRegion={ok:true,skipped:true},oldIndependent={ok:true,skipped:true};
+    try{if(window.__A9877_TEST__?.fullRegression)prior=await window.__A9877_TEST__.fullRegression()}catch(e){prior={ok:false,error:String(e)}}
+    try{if(window.__A9855_TEST__?.npcAudit)npc=await window.__A9855_TEST__.npcAudit()}catch(e){npc={ok:false,error:String(e)}}
+    try{if(window.__A9876_TEST__?.audit)ab=window.__A9876_TEST__.audit()}catch(e){ab={ok:false,error:String(e)}}
+    try{regionKill=await a9878KillRegionProbe()}catch(e){regionKill={ok:false,error:String(e)}}
+    try{offlineRegion=await a9878OfflineRegionProbe()}catch(e){offlineRegion={ok:false,error:String(e)}}
+    try{oldIndependent=await a9878OldIndependentProbe()}catch(e){oldIndependent={ok:false,error:String(e)}}
+    a9878ApplySourceData();a9878ApplyVersion();
+    // Alpha98.77 的 own audit 仍把三巨人視為「來源保護缺失」；98.78 已有舊阿肥明確表，所以不以 98.77 current 分類作 gate。
+    const priorGate=prior?.checks?Object.values(prior.checks).every(x=>x?.ok!==false):prior?.ok!==false;
+    return{ok:own.ok&&priorGate&&npc?.ok!==false&&ab?.ok!==false&&regionKill?.ok!==false&&offlineRegion?.ok!==false&&oldIndependent?.ok!==false,build:A9878_BUILD,current:own,prior,priorGate,npc,ab,regionKill,offlineRegion,oldIndependent};
+  }
+  a9878ApplyVersion();
+  window.__A9878_TEST__={build:A9878_BUILD,source:A9878_SOURCE,audit:a9878DropAudit,fullRegression:a9878FullRegression,region:a9878RegionAudit,regionRoll:a9878RollRegionDrops,regionGrant:a9878GrantRegionDrops,killRegionProbe:a9878KillRegionProbe,offlineRegionProbe:a9878OfflineRegionProbe,oldIndependentProbe:a9878OldIndependentProbe,apply:a9878ApplySourceData,status:a9878Status,oldFallbacks:A9878_OLD_FALLBACKS,bigTaurus:A9878_BIG_TAURUS_EXACT};
+})();
+
+
+// =====================================================================
+// B1.0 Alpha98.79 — 世界王新/舊資料交叉校對 + 現行抽抽樂規則 QA
+// 資料分層：新阿肥目前公開 14 筆為現行名單；舊阿肥 30 筆 boss 標記只作歷史交叉來源，絕不整批重新開放。
+// 既有 Alpha98.44 已正確實作「>100 傷害或實際支援補血後，20% 機率取得抽抽樂」；本版驗證並保留，不重複覆寫玩法。
+// =====================================================================
+const A9879_BUILD='B1.0 Alpha98.79';
+(function(){
+  const A9879_SOURCE=Object.freeze({
+    newSite:'https://zxc518zxc.github.io/worldboss.html',
+    oldSite:'https://toudhue.github.io/my-web/%E6%80%AA%E7%89%A9%E6%8E%89%E8%90%BD%E5%9C%96%E9%91%91.html',
+    current:'新阿肥 2026-09-15 公開世界王頁：14 筆',
+    historical:'舊阿肥怪物掉落圖鑑：30 筆 boss:true（較廣泛歷史分類）',
+    policy:'現行世界王名單/規則以新阿肥為準；舊阿肥只做交叉查證，不把 30 筆歷史 boss 標記整批開回一般世界王。'
+  });
+  const A9879_OLD_BOSS_TAGS=Object.freeze([
+    ['siege_tower','肯特守護塔'],['siege_gate','肯特城門'],['giant_croc','巨大鱷魚'],['bandit_boss','強盜頭目'],['nm_037','夢魘'],
+    ['sema','西瑪'],['batus','巴土瑟'],['nm_029','水精靈王'],['nm_028','火精靈王'],['nm_031','地精靈王'],['nm_030','風精靈王'],['nm_032','獨角獸'],
+    ['casper','卡士柏'],['ifrit','伊弗利特'],['marcus','馬庫爾'],['wyvern','飛龍'],['baphomet','巴風特'],['blackelder','黑長者'],['doppel_boss','變形怪首領'],
+    ['kurt','克特'],['kari','卡瑞'],['dk','死亡騎士'],['obli_bigtaurus','遺忘之島巨大牛人'],['ice_queen','冰之女王'],['ant_queen','巨蟻女皇'],
+    ['phoenix','不死鳥'],['nm_034','惡魔'],['antaras','安塔瑞斯'],['fafurion','法利昂'],['valakas','巴拉卡斯']
+  ].map(([id,name])=>Object.freeze({id,name})));
+  const A9879_OLD_BOSS_SET=new Set(A9879_OLD_BOSS_TAGS.map(x=>x.id));
+  const A9879_CURRENT_WRAPPERS=new Set(['wb_twinwyvern','wb_fourcolor','wb_castle']);
+
+  function a9879BossPartRows(c){
+    return a43BossParts(c).map(p=>{
+      const raw=DATA.dropsByMobName?.[p.m?.n]||[];
+      const valid=raw.filter(row=>{
+        const id=row?.[0],rate=Number(row?.[1]||0);
+        return !!id&&rate>0&&rate<=100&&!!DATA.items?.[id]&&!a43ArchivedOldItem(id);
+      });
+      return{mobId:p.mobId,name:p.m?.n||p.mobId,rawRows:raw.length,validRows:valid.length,oldBossTagged:A9879_OLD_BOSS_SET.has(p.mobId)};
+    });
+  }
+
+  function a9879CrossSource(){
+    const current=a9843PublicBossEntries();
+    const out=a9843OutOfRosterEntries();
+    const direct=current.filter(([id,c])=>{
+      if(A9879_CURRENT_WRAPPERS.has(id))return false;
+      const parts=a43BossParts(c);return parts.length===1&&A9879_OLD_BOSS_SET.has(parts[0].mobId);
+    }).map(([id,c])=>({id,name:a43BossName(id),mobId:a43BossParts(c)[0]?.mobId||''}));
+    const wrappers=current.filter(([id])=>A9879_CURRENT_WRAPPERS.has(id)).map(([id,c])=>({
+      id,name:a43BossName(id),mvOnly:!!c?.mvOnly,parts:a43BossParts(c).map(p=>({mobId:p.mobId,name:p.m?.n||p.mobId,oldBossTagged:A9879_OLD_BOSS_SET.has(p.mobId)}))
+    }));
+    const retainedOld=out.filter(([,c])=>a43BossParts(c).some(p=>A9879_OLD_BOSS_SET.has(p.mobId))).map(([id,c])=>({
+      id,name:a43BossName(id),parts:a43BossParts(c).filter(p=>A9879_OLD_BOSS_SET.has(p.mobId)).map(p=>({mobId:p.mobId,name:p.m?.n||p.mobId}))
+    }));
+    const directMobIds=new Set(direct.map(x=>x.mobId));
+    const retainedMobIds=new Set(retainedOld.flatMap(x=>x.parts.map(p=>p.mobId)));
+    const outside=A9879_OLD_BOSS_TAGS.filter(x=>!directMobIds.has(x.id)&&!retainedMobIds.has(x.id));
+    const coverage=current.map(([id,c])=>({id,name:a43BossName(id),mvOnly:!!c?.mvOnly,effectiveRows:a43BossDropRows(c).length,parts:a9879BossPartRows(c)}));
+    return{
+      currentPublic:current.length,currentStandard:a9843StandardBossEntries().length,oldBossTagged:A9879_OLD_BOSS_TAGS.length,
+      directOverlap:direct.length,currentWrappers:wrappers.length,oldRetainedSpecial:retainedOld.length,oldOutsideRuntime:outside.length,
+      direct,wrappers,retainedOld,outside,coverage
+    };
+  }
+
+  function a9879BossAudit(){
+    const issues=[],cross=a9879CrossSource(),port=window.AFEI_DATA_PORT?.getContentStatus?.().worldBoss||{},prev=window.__A9878_TEST__?.audit?.();
+    if(cross.currentPublic!==14)issues.push('新阿肥現行公開世界王不是 14 筆');
+    if(cross.currentStandard!==13)issues.push('標準可挑戰世界王不是 13 筆');
+    if(cross.oldBossTagged!==30)issues.push('舊阿肥 boss 標記歷史清單不是 30 筆');
+    if(cross.directOverlap!==11)issues.push('新舊直接重疊世界王不是 11 筆');
+    if(cross.currentWrappers!==3)issues.push('現行複合/展示 wrapper 不是 3 筆');
+    if(cross.oldRetainedSpecial!==5)issues.push('舊 boss 標記且仍保留於特殊 worldBoss 設定的記錄不是 5 筆');
+    if(cross.oldOutsideRuntime!==14)issues.push('舊 boss 標記但不屬現行 worldBoss runtime 的歷史記錄不是 14 筆');
+    if(cross.oldBossTagged!==cross.directOverlap+cross.oldRetainedSpecial+cross.oldOutsideRuntime)issues.push('舊 30 筆分類加總不一致');
+    if(!DATA.worldBosses?.wb_castle?.mvOnly)issues.push('城堡守護者必須維持 mvOnly');
+    for(const b of cross.coverage){
+      if(!b.parts.length)issues.push(b.id+' 缺少可解析的 Boss 部件');
+      if(b.effectiveRows<=0)issues.push(b.id+' 沒有有效現行掉落表');
+      for(const p of b.parts)if(p.validRows<=0)issues.push(b.id+' / '+p.mobId+' 沒有有效現行掉落列');
+    }
+    if(Number(A9844_WB_TICKET_CHANCE)!==0.20)issues.push('世界王抽抽樂機率不是 20%');
+    if(Number(A9844_WB_DAMAGE_THRESHOLD)!==100)issues.push('世界王傷害門檻不是 >100');
+    if(!a9843TicketEligible('wb_sema'))issues.push('現役標準世界王不具抽抽樂資格');
+    if(a9843TicketEligible('wb_castle'))issues.push('mvOnly 城堡守護者不應具一般抽抽樂資格');
+    if(a9843TicketEligible('wb_ice'))issues.push('非現役歷史/特殊世界王不應具一般抽抽樂資格');
+    if(Number(port?.publicCurrent||0)!==14||Number(port?.standardChallengeable||0)!==13)issues.push('DataPort 現行世界王數量不一致');
+    if(Number(port?.ticketRule?.chance)!==0.20||Number(port?.ticketRule?.damageGreaterThan)!==100||port?.ticketRule?.supportHealQualifies!==true)issues.push('DataPort 抽抽樂規則不一致');
+    if(prev&&prev.worldBossUnchanged!==true)issues.push('Alpha98.78 不應改寫世界王設定');
+    return{ok:issues.length===0,issues,build:A9879_BUILD,source:A9879_SOURCE,cross,ticketRule:{chance:A9844_WB_TICKET_CHANCE,damageGreaterThan:A9844_WB_DAMAGE_THRESHOLD,supportHealQualifies:true},previousDropLayerWorldBossUnchanged:prev?.worldBossUnchanged===true};
+  }
+
+  function a9879TicketBoundaryProbe(){
+    const before=state?JSON.parse(JSON.stringify(state)):null,out={};
+    try{
+      if(typeof a76TestReset==='function')a76TestReset('knight',80);
+      a9844Ensure();state.boss.id='wb_sema';state.boss.active=true;state.boss.fighting=true;a9844ResetBossContribution('wb_sema');
+      state.a9844.worldBoss.fight.damage=100;state.a9844.worldBoss.fight.supportHeal=0;out.damage100=a9844BossContribution().qualifies;
+      state.a9844.worldBoss.fight.damage=101;out.damage101=a9844BossContribution().qualifies;
+      state.a9844.worldBoss.fight.damage=0;state.a9844.worldBoss.fight.supportHeal=1;out.support1=a9844BossContribution().qualifies;
+      out.chance=A9844_WB_TICKET_CHANCE;out.ok=out.damage100===false&&out.damage101===true&&out.support1===true&&out.chance===0.20;
+    }catch(e){out.ok=false;out.error=String(e?.stack||e)}finally{if(before)state=before}
+    return out;
+  }
+
+  function a9879IndependentBossDropProbe(){
+    const before=state?JSON.parse(JSON.stringify(state)):null,oldRand=Math.random,out={};
+    try{
+      if(typeof a76TestReset==='function')a76TestReset('knight',80);
+      const c=DATA.worldBosses?.wb_sema,rows=a43BossDropRows(c);if(!c||rows.length<2)return{ok:false,reason:'wb_sema drop rows unavailable'};
+      const expected={};for(const r of rows)expected[r.id]=(expected[r.id]||0)+1;
+      const beforeCounts=Object.fromEntries(Object.keys(expected).map(id=>[id,a8Count(id)]));
+      Math.random=()=>0;const rw=a43RollBossRewards(c);const afterCounts=Object.fromEntries(Object.keys(expected).map(id=>[id,a8Count(id)]));
+      const missed=Object.entries(expected).filter(([id,n])=>afterCounts[id]<beforeCounts[id]+n).map(([id,n])=>({id,expected:n,before:beforeCounts[id],after:afterCounts[id]}));
+      out.ok=missed.length===0&&rw.got.length>=Object.values(expected).reduce((a,b)=>a+b,0);out.rows=rows.length;out.unique=Object.keys(expected).length;out.got=rw.got.length;out.missed=missed;
+    }catch(e){out.ok=false;out.error=String(e?.stack||e)}finally{Math.random=oldRand;if(before)state=before}
+    return out;
+  }
+
+  // Alpha98.43 的舊 selfTest 寫在 98.44「20%」規則之前，因此仍期待每場必得 1 次抽數。
+  // 只修開發 QA hook，不改遊戲玩法：最新版相容測試改驗證 14/13 名單與 >100 / 支援補血門檻。
+  const A9879_ORIGINAL_9843_SELFTEST=window.__A9843_TEST__?.selfTest;
+  function a9879Legacy9843Compatibility(){
+    const roster=a9843Audit(),ticket=a9879TicketBoundaryProbe(),cross=a9879CrossSource();
+    return{ok:roster.ok&&ticket.ok&&cross.currentPublic===14&&cross.currentStandard===13,roster,ticket,note:'Alpha98.43 原始 selfTest 的「必得抽數」期待已被 Alpha98.44 現行 20% 規則取代；此相容測試只校驗最新版規則。'};
+  }
+  try{if(window.__A9843_TEST__){window.__A9843_TEST__.selfTest9843Original=A9879_ORIGINAL_9843_SELFTEST;window.__A9843_TEST__.selfTest=a9879Legacy9843Compatibility}}catch(e){}
+
+  const _a9879BossDrawerBase=a43BossDrawer;
+  a43BossDrawer=function(){
+    let h=_a9879BossDrawerBase.apply(this,arguments);if(h.includes('data-a9879-wb-note="1"'))return h;
+    const cross=a9879CrossSource();
+    const note='<div class="a7-note" data-a9879-wb-note="1" style="margin:6px 0 8px"><b>98.79 世界王資料校對：</b>新阿肥目前公開 <b>'+cross.currentPublic+'</b> 筆（標準可挑戰 '+cross.currentStandard+' 筆＋城堡守護者特殊展示 1 筆）。舊阿肥的 <b>'+cross.oldBossTagged+'</b> 筆 boss 標記屬較廣泛歷史分類，沒有整批重新開放；掉落與名單仍以新阿肥現行層優先。</div>';
+    return h.replace('<div class="a43-boss-list">',note+'<div class="a43-boss-list">');
+  };
+
+  function a9879ApplyVersion(){
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9879_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.79：世界王新/舊阿肥資料重新分層校對；現行公開 14、標準可挑戰 13，舊版 30 筆 boss 標記維持歷史層；抽抽樂仍依 09/15 現行 20% 規則。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.79｜世界王現行14／舊版30分層校對｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9879_BUILD+'</b><p>世界王資料重新交叉校對：新阿肥現行公開 14 筆，其中 13 筆可標準挑戰、城堡守護者 1 筆維持 mvOnly 特殊展示。舊阿肥圖鑑的 30 筆 boss:true 是較廣泛的歷史分類，不會整批重新開放。</p><p>交叉分類結果：11 筆新舊直接重疊；3 筆為現行複合／展示 wrapper（龍之谷雙龍、歐林你這個背叛者、城堡守護者）；舊版另外有 5 筆仍保留為特殊/歷史 worldBoss 設定，14 筆只保留在歷史怪物分類。</p><p>09/15 抽抽樂規則已再次驗證：對王造成 <b>超過 100</b> 傷害，或實際支援補血後，結算才有 <b>20%</b> 機率取得 1 次抽數，並非每場必得。世界王掉落仍逐筆獨立判定。</p><small>本版未新增媒體；GitHub Pages 只需替換 index.html。</small>';
+    document.title=A41_BRAND+' · '+A9879_BUILD;
+  }
+  const _a9879RenderBase=render;
+  render=function(){const r=_a9879RenderBase.apply(this,arguments);a9879ApplyVersion();return r};
+  const _a9879InitBase=init;
+  init=function(){const r=_a9879InitBase.apply(this,arguments);setTimeout(a9879ApplyVersion,0);return r};
+
+  async function a9879FullRegression(){
+    const own=a9879BossAudit(),ticket=a9879TicketBoundaryProbe(),drop=a9879IndependentBossDropProbe();
+    let prior={ok:true,skipped:true},npc={ok:true,skipped:true},ab={ok:true,skipped:true},wbUi={ok:true,skipped:true};
+    try{if(window.__A9878_TEST__?.fullRegression)prior=await window.__A9878_TEST__.fullRegression()}catch(e){prior={ok:false,error:String(e)}}
+    // Alpha98.78 fullRegression 已完整跑過 90 NPC；同一輪再跑第二次會碰到舊 trace buffer 上限而產生假失敗。
+    // 優先直接沿用上一層的 NPC 結果，只有上一層沒提供時才補跑一次。
+    try{if(prior?.npc)npc=prior.npc;else if(window.__A9855_TEST__?.npcAudit)npc=await window.__A9855_TEST__.npcAudit()}catch(e){npc={ok:false,error:String(e)}}
+    try{if(window.__A9876_TEST__?.audit)ab=window.__A9876_TEST__.audit()}catch(e){ab={ok:false,error:String(e)}}
+    try{
+      const box=document.createElement('div');box.innerHTML=a43BossDrawer();
+      wbUi={ok:box.querySelectorAll('[data-a43-boss]').length===13&&box.querySelectorAll('[data-a9843-locked]').length===1&&!!box.querySelector('[data-a9879-wb-note="1"]')&&(box.textContent||'').includes('20%'),cards:box.querySelectorAll('[data-a43-boss]').length,locked:box.querySelectorAll('[data-a9843-locked]').length,note:!!box.querySelector('[data-a9879-wb-note="1"]')};
+    }catch(e){wbUi={ok:false,error:String(e)}}
+    a9879ApplyVersion();
+    return{ok:own.ok&&ticket.ok&&drop.ok&&prior?.ok!==false&&npc?.ok!==false&&ab?.ok!==false&&wbUi?.ok!==false,build:A9879_BUILD,current:own,ticket,independentDrop:drop,prior,npc,ab,worldBossUi:wbUi};
+  }
+
+  a9879ApplyVersion();
+  window.__A9879_TEST__={build:A9879_BUILD,source:A9879_SOURCE,audit:a9879BossAudit,crossSource:a9879CrossSource,ticketBoundaryProbe:a9879TicketBoundaryProbe,independentDropProbe:a9879IndependentBossDropProbe,legacy9843Compatibility:a9879Legacy9843Compatibility,fullRegression:a9879FullRegression,oldBossTags:A9879_OLD_BOSS_TAGS,applyVersion:a9879ApplyVersion};
+})();
+
+
+// =====================================================================
+// B1.0 Alpha98.80 — 試煉 NPC 兌換按鈕恢復
+// 根因：Alpha98.50 為新版製作/交換介面統一隱藏舊 .a53-actions；
+// 製作/一般交換已有 a973-buybox 取代舊操作列，但 quest/試煉只搬了「詳情」,
+// 沒有建立新的可見兌換按鈕，導致所有標準試煉列看得到需求卻無法按兌換。
+// 本版只補 UI 代理按鈕，實際消耗/職業限制/產物仍呼叫原 data-a53-quest 邏輯。
+// =====================================================================
+const A9880_BUILD='B1.0 Alpha98.80';
+(function(){
+  const A9880_CSS=`
+body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a53-row{
+  grid-template-columns:minmax(0,1fr) 86px!important;
+}
+body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a9880-quest-actions{
+  width:86px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  padding:0!important;
+  margin:0!important;
+}
+body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a9880-quest-primary{
+  width:86px!important;
+  min-width:86px!important;
+  height:36px!important;
+  min-height:36px!important;
+  border:1px solid #535268!important;
+  border-radius:6px!important;
+  background:#3e3d4e!important;
+  color:#9998a6!important;
+  font-size:14px!important;
+  line-height:34px!important;
+  padding:0 8px!important;
+  margin:0!important;
+  white-space:nowrap!important;
+  cursor:not-allowed!important;
+  opacity:1!important;
+}
+body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a53-row.ready .a9880-quest-primary:not(:disabled){
+  background:linear-gradient(180deg,#4c8a12,#346d08)!important;
+  border-color:#5d9a16!important;
+  color:#fff!important;
+  cursor:pointer!important;
+}
+body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a9850-titleline>.a973-detail-btn{
+  display:inline-block!important;
+}
+@media(max-width:700px){
+  body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a53-row{
+    grid-template-columns:minmax(0,1fr) 82px!important;
+  }
+  body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a9880-quest-actions,
+  body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a9880-quest-primary{
+    width:82px!important;
+    min-width:82px!important;
+  }
+}
+@media(max-width:360px){
+  body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a53-row{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a9880-quest-actions{
+    grid-column:1/-1!important;
+    width:100%!important;
+    justify-content:stretch!important;
+  }
+  body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a9880-quest-primary{
+    width:100%!important;
+    min-width:0!important;
+  }
+}`;
+  function a9880EnsureStyle(){
+    let st=document.getElementById('a9880-style');
+    if(!st){st=document.createElement('style');st.id='a9880-style';document.head.appendChild(st)}
+    st.textContent=A9880_CSS;return st;
+  }
+  function a9880MoveQuestDetail(main,detail){
+    if(!main||!detail)return false;
+    let line=main.querySelector(':scope > .a9850-titleline');
+    if(!line){
+      const b=main.querySelector(':scope > b');if(!b)return false;
+      line=document.createElement('div');line.className='a9850-titleline';b.before(line);line.appendChild(b);
+    }
+    if(detail.parentElement!==line)line.appendChild(detail);
+    return true;
+  }
+  function a9880DecorateQuest(npc){
+    a9880EnsureStyle();
+    const box=document.getElementById('village-action'),cfg=A8_QUEST?.[npc?.id];
+    if(!box||!cfg)return{ok:false,reason:'not-standard-trial',buttons:0};
+    box.classList.add('a9880-trial-active');
+    let buttons=0,enabled=0;
+    box.querySelectorAll('.a53-row').forEach(row=>{
+      const original=row.querySelector('[data-a53-quest]');if(!original)return;
+      const i=Number(original.dataset.a53Quest),opt=cfg.opts?.[i];if(!opt)return;
+      const main=row.querySelector('.a53-main'),detail=row.querySelector('[data-a973-detail]');
+      if(main&&detail)a9880MoveQuestDetail(main,detail);
+      let wrap=row.querySelector(':scope > .a9880-quest-actions');
+      if(!wrap){wrap=document.createElement('div');wrap.className='a9880-quest-actions';row.appendChild(wrap)}
+      let proxy=wrap.querySelector('[data-a9880-quest]');
+      if(!proxy){
+        proxy=document.createElement('button');proxy.type='button';proxy.className='a9880-quest-primary';proxy.dataset.a9880Quest=String(i);proxy.textContent='兌換';wrap.appendChild(proxy);
+      }
+      proxy.disabled=!!original.disabled;
+      proxy.onclick=e=>{
+        e.preventDefault();e.stopPropagation();
+        if(proxy.disabled||original.disabled)return;
+        original.click();
+      };
+      buttons++;if(!proxy.disabled)enabled++;
+    });
+    return{ok:buttons===(cfg.opts||[]).length,buttons,enabled,expected:(cfg.opts||[]).length};
+  }
+
+  // 每次切 NPC 先清掉試煉專用樣式，只有標準試煉 renderer 會重新加回。
+  const _a9880OpenNpcBase=a7OpenNpc;
+  a7OpenNpc=function(){
+    document.getElementById('village-action')?.classList.remove('a9880-trial-active');
+    return _a9880OpenNpcBase.apply(this,arguments);
+  };
+  const _a9880QuestBase=a8RenderQuest;
+  a8RenderQuest=function(npc){
+    const r=_a9880QuestBase.apply(this,arguments);
+    try{a9880DecorateQuest(npc)}catch(e){console.error('Alpha98.80 trial button decorate',e)}
+    return r;
+  };
+
+  function a9880TrialButtonAudit(){
+    const storage=a76StorageSnapshot(),stateSnap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot,mapTabSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const rows=[],bad=[],skipped=[];
+    try{
+      for(const [nid,cfg] of Object.entries(A8_QUEST||{})){
+        const f=a76TestFindNpc(nid);
+        // A8_QUEST 仍保留少數舊資料設定，但 NPC 已不在目前 17 村 runtime；只記錄，不把它當成玩家可見故障。
+        if(!f){skipped.push({npc:nid,reason:'not-in-current-town-runtime'});continue}
+        for(let i=0;i<(cfg.opts||[]).length;i++){
+          const o=cfg.opts[i],cls=String(o.cls||cfg.cls||'knight'),req=a76ReqTotals((o.req||[]).map(x=>Array.isArray(x)?{id:x[0],cnt:x[1]}:x));
+          a76TestReset(cls,1);a76TestSeedReq(req);a76TestVillage(f.townId);
+          // 走玩家真正點 NPC 的最終入口，確保 a972-open / 98.46 overlay / 98.50 normalize 都實際套用。
+          a7OpenNpc(nid);a972ShowNpcAction();a9880DecorateQuest(f.npc);
+          const original=document.querySelector('[data-a53-quest="'+i+'"]');
+          const proxy=document.querySelector('[data-a9880-quest="'+i+'"]');
+          const st=proxy?getComputedStyle(proxy):null;
+          const visible=!!proxy&&st.display!=='none'&&st.visibility!=='hidden'&&proxy.getBoundingClientRect().width>0&&proxy.getBoundingClientRect().height>0;
+          const ok=!!original&&!!proxy&&visible&&!original.disabled&&!proxy.disabled&&(proxy.textContent||'').includes('兌換');
+          rows.push({npc:nid,name:f.npc.n,index:i,cls,result:o.result,visible,enabled:!!proxy&&!proxy.disabled,ok});
+          if(!ok)bad.push(nid+'#'+i+':button-missing-or-disabled');
+        }
+      }
+      // 50 級試煉是不同流程：初始為「接取試煉」，中段為「交付」，最後才出現「交換」。
+      // 只確認其目前階段的主要操作按鈕仍可見，避免把尚未完成前置階段誤判成缺少兌換。
+      const f50=a76TestFindNpc('npc_digallatin');
+      if(f50){
+        a76TestReset('knight',1);state.player.lv=60;a76TestVillage(f50.townId);a7OpenNpc('npc_digallatin');a972ShowNpcAction();
+        const bs=[...document.querySelectorAll('#a9-trial-accept,#a9-trial-turn,[data-a9-trial-reward]')];
+        const visible=bs.length>0&&bs.some(b=>{const st=getComputedStyle(b);return st.display!=='none'&&st.visibility!=='hidden'&&b.getBoundingClientRect().width>0&&b.getBoundingClientRect().height>0});
+        rows.push({npc:'npc_digallatin',name:f50.npc.n,special50:true,count:bs.length,visible,ok:visible});
+        if(!visible)bad.push('npc_digallatin:50級試煉主要操作按鈕不可見');
+      }
+    }catch(e){bad.push(String(e?.stack||e))}
+    finally{
+      try{
+        a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;
+        if(typeof mapTab!=='undefined'&&mapTabSnap!=null)mapTab=mapTabSnap;
+        if(stateSnap){state=stateSnap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}
+      }catch(e){bad.push('restore:'+String(e?.stack||e))}
+    }
+    return{ok:bad.length===0,build:A9880_BUILD,total:rows.length,standardOptions:rows.filter(x=>!x.special50).length,rows,bad,skipped};
+  }
+  function a9880TrialClickProbe(){
+    const storage=a76StorageSnapshot(),stateSnap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot,mapTabSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const out={ok:false};
+    try{
+      const f=a76TestFindNpc('npc_mother'),cfg=A8_QUEST?.npc_mother;if(!f||!cfg?.opts?.[0])return{ok:false,reason:'npc_mother-config-missing'};
+      const o=cfg.opts[0],req=a76ReqTotals((o.req||[]).map(x=>Array.isArray(x)?{id:x[0],cnt:x[1]}:x));
+      a76TestReset('elf',1);a76TestSeedReq(req);a76TestVillage(f.townId);a7OpenNpc('npc_mother');a972ShowNpcAction();a9880DecorateQuest(f.npc);
+      const original=document.querySelector('[data-a53-quest="0"]'),proxy=document.querySelector('[data-a9880-quest="0"]'),box=document.getElementById('village-action');
+      const beforeResult=a8Count(o.result),beforeReq=Object.fromEntries(req.filter(q=>q.id!=='gold').map(q=>[q.id,a8Count(q.id)])),beforeGold=Number(state.player.gold||0);
+      const br=proxy?.getBoundingClientRect(),xr=box?.getBoundingClientRect();
+      out.visible=!!proxy&&!!br&&br.width>0&&br.height>0&&getComputedStyle(proxy).display!=='none';
+      out.insidePopup=!!(br&&xr&&br.left>=xr.left-1&&br.right<=xr.right+1&&br.top>=xr.top-1&&br.bottom<=xr.bottom+1);
+      out.enabled=!!proxy&&!proxy.disabled&&!!original&&!original.disabled;
+      proxy?.click();
+      out.resultDelta=a8Count(o.result)-beforeResult;
+      out.reqDelta=Object.fromEntries(req.filter(q=>q.id!=='gold').map(q=>[q.id,a8Count(q.id)-beforeReq[q.id]]));
+      out.goldDelta=Number(state.player.gold||0)-beforeGold;
+      out.rerenderButton=!!document.querySelector('[data-a9880-quest="0"]');
+      const reqOk=req.every(q=>q.id==='gold'?out.goldDelta===-q.cnt:out.reqDelta[q.id]===-q.cnt);
+      out.ok=out.visible&&out.insidePopup&&out.enabled&&out.resultDelta===Math.max(1,Number(o.yield||1))&&reqOk&&out.rerenderButton;
+    }catch(e){out.ok=false;out.error=String(e?.stack||e)}
+    finally{
+      try{
+        a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;
+        if(typeof mapTab!=='undefined'&&mapTabSnap!=null)mapTab=mapTabSnap;
+        if(stateSnap){state=stateSnap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}
+      }catch(e){out.restoreError=String(e?.stack||e);out.ok=false}
+    }
+    return out;
+  }
+  function a9880CurrentNpcAudit(){
+    const box=document.getElementById('village-action'),issues=[];
+    if(box?.classList.contains('a9880-trial-active')){
+      const rows=[...box.querySelectorAll('.a53-row')];
+      for(const row of rows){
+        const original=row.querySelector('[data-a53-quest]');if(!original)continue;
+        const proxy=row.querySelector(':scope > .a9880-quest-actions [data-a9880-quest]');
+        if(!proxy)issues.push('試煉列缺少可見兌換按鈕');
+        else if(getComputedStyle(proxy).display==='none')issues.push('試煉兌換按鈕仍被 CSS 隱藏');
+      }
+    }
+    return{ok:issues.length===0,issues};
+  }
+  function a9880ApplyVersion(){
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9880_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.80：修正全部標準試煉 NPC 的兌換按鈕被新版 NPC 排版 CSS 隱藏；職業限制、材料消耗與兌換結果維持原邏輯。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.80｜試煉NPC兌換按鈕恢復｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9880_BUILD+'</b><p>修正 Alpha98.50 後「試煉」NPC 每列只顯示成品與需求，卻沒有可操作的兌換按鈕。</p><p>根因是新版 NPC 介面會統一隱藏舊 <code>.a53-actions</code>；製作與一般交換已有新操作列，但試煉沒有建立替代按鈕。98.80 已補上可見「兌換」按鈕，並直接代理原本的試煉交易事件，不改任何材料、職業或產物規則。</p><p>50級試煉使用另一套操作列，也一併做回歸確認。</p><small>本版未新增媒體；GitHub Pages 只需替換 index.html。</small>';
+    document.title=A41_BRAND+' · '+A9880_BUILD;
+  }
+  const _a9880RenderBase=render;
+  render=function(){const r=_a9880RenderBase.apply(this,arguments);a9880ApplyVersion();return r};
+  const _a9880InitBase=init;
+  init=function(){const r=_a9880InitBase.apply(this,arguments);setTimeout(a9880ApplyVersion,0);return r};
+
+  async function a9880FullRegression(){
+    const trial=a9880TrialButtonAudit(),click=a9880TrialClickProbe();
+    let prior={ok:true,skipped:true},npc={ok:true,skipped:true},ab={ok:true,skipped:true};
+    try{if(window.__A9879_TEST__?.fullRegression)prior=await window.__A9879_TEST__.fullRegression()}catch(e){prior={ok:false,error:String(e)}}
+    try{npc=prior?.npc||await window.__A9855_TEST__?.npcAudit?.()||npc}catch(e){npc={ok:false,error:String(e)}}
+    try{if(window.__A9876_TEST__?.audit)ab=window.__A9876_TEST__.audit()}catch(e){ab={ok:false,error:String(e)}}
+    a9880ApplyVersion();
+    return{ok:trial.ok&&click.ok&&prior?.ok!==false&&npc?.ok!==false&&ab?.ok!==false,build:A9880_BUILD,trial,click,prior,npc,ab};
+  }
+
+  a9880EnsureStyle();a9880ApplyVersion();
+  window.__A9880_TEST__={build:A9880_BUILD,decorate:a9880DecorateQuest,audit:a9880CurrentNpcAudit,trialButtonAudit:a9880TrialButtonAudit,clickProbe:a9880TrialClickProbe,fullRegression:a9880FullRegression,applyVersion:a9880ApplyVersion};
+})();
+
+// =====================================================================
+// B1.0 Alpha98.81 — 高速離線收益結算引擎
+// - 解決 24h 離線收益以 100ms tick 全量重播造成 PC 結算極慢、手機高負載發熱。
+// - 短段仍使用既有真實 100ms replay 作校準；長段改為「校準擊殺率 + 真實 killMob 批次結算」。
+// - killMob / rollDrop / 地區掉落 / 經驗金幣倍率 / 等級提升仍走現行完整鏈，不另造第二套獎勵表。
+// - 消耗品依校準期間的實際 a8Take 用量等比例扣除，並沿用現行 a97 自動補貨規則。
+// - 特殊 Boss 房、攻城/零獎勵單位與短時間離線自動退回舊精確 replay。
+// =====================================================================
+(()=>{
+  const A9881_BUILD='B1.0 Alpha98.81';
+  const A9881_EXACT_LIMIT_MS=90*1000;
+  const A9881_SEGMENT_MS=30*60*1000;
+  const A9881_SAMPLE_BASE_MS=10*1000;
+  const A9881_SAMPLE_EXT_MS=20*1000;
+  const A9881_SAMPLE_MIN_KILLS=3;
+  const A9881_MAX_BATCH_KILLS=6000;
+  const A9881_MAX_WALL_STEP_MS=42;
+  let A9881_TOKEN=0,A9881_PROCESSING=false,A9881_TIMER=0;
+
+  const _a9881ExactProcessOffline=a45ProcessOffline;
+  const _a9881FinishBase=a45FinishOffline;
+  const _a9881A48UpdateBase=typeof a48UpdateSettleOverlay==='function'?a48UpdateSettleOverlay:null;
+
+  function a9881EnsureState(){
+    if(!state)return null;
+    state.a9881=(state.a9881&&typeof state.a9881==='object'&&!Array.isArray(state.a9881))?state.a9881:{};
+    if(typeof state.a9881.fastOffline!=='boolean')state.a9881.fastOffline=true;
+    state.a9881.version=81;
+    state.saveMeta=(state.saveMeta&&typeof state.saveMeta==='object'&&!Array.isArray(state.saveMeta))?state.saveMeta:{};
+    state.saveMeta.offlinePolicy='alpha98.81-hybrid-fast-calibration+batch-kill+24h-cap';
+    state.saveMeta.fastOffline=true;
+    return state.a9881;
+  }
+  function a9881RoundMs(ms){return Math.max(0,Math.floor(Number(ms||0)/A45_OFFLINE_TICK_MS)*A45_OFFLINE_TICK_MS)}
+  function a9881StochasticRound(v){v=Math.max(0,Number(v)||0);const f=Math.floor(v),r=v-f;return f+(Math.random()<r?1:0)}
+  function a9881MergeCounts(a,b){for(const [id,n] of Object.entries(b||{}))a[id]=(a[id]||0)+Number(n||0);return a}
+
+  function a9881UnsafeMap(){
+    try{if(typeof a452SpecialDef==='function'&&a452SpecialDef())return 'special-map'}catch(e){}
+    if(state?.boss?.fighting)return 'world-boss';
+    let pool=[];try{pool=mobPool()||[]}catch(e){return 'no-mob-pool'}
+    if(!pool.length)return 'no-mob-pool';
+    for(const id of pool){
+      const m=DATA.mobs?.[id];if(!m)continue;const n=String(m.n||'');
+      if(n==='往上層的樓梯'||/城門$|守護塔$/.test(n))return 'system-unit';
+      const exp=Number(m.exp||0),g0=Number(m.goldMin||0),g1=Number(m.goldMax||0);
+      if(exp<=0&&g0<=0&&g1<=0)return 'zero-reward-unit';
+    }
+    return '';
+  }
+  function a9881CanFast(job){
+    if(!state||!job||!a9881EnsureState()?.fastOffline)return false;
+    if(Number(job.remaining||0)<=A9881_EXACT_LIMIT_MS)return false;
+    if(state.dead||a7IsVillage()||a30MapKind(state.mapId)!=='hunt')return false;
+    return !a9881UnsafeMap();
+  }
+
+  function a9881Calibrate(maxMs){
+    maxMs=a9881RoundMs(maxMs);if(maxMs<A45_OFFLINE_TICK_MS)return{done:0,kills:0,consumed:{},stopped:false};
+    const consumed={},oldTake=a8Take;
+    const before={
+      kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0),
+      hp:Number(state.player?.hp||0),mp:Number(state.player?.mp||0),maxHp:Number(state.player?.maxHp||1),maxMp:Number(state.player?.maxMp||1),
+      lv:Number(state.player?.lv||1),playerGold:Number(state.player?.gold||0)
+    };
+    let done=0,requested=0;
+    a8Take=function(id,n=1){
+      const pre=Number(a8Count(id)||0),r=oldTake.apply(this,arguments),post=Number(a8Count(id)||0),d=Math.max(0,pre-post);
+      if(d>0)consumed[id]=(consumed[id]||0)+d;return r;
+    };
+    try{
+      const p1=Math.min(maxMs,A9881_SAMPLE_BASE_MS);requested+=p1;done+=a45ReplayChunk(p1);
+      let kills=Number(state.session?.kills||0)-before.kills;
+      if(done>=p1&&kills<A9881_SAMPLE_MIN_KILLS&&maxMs>done){
+        const p2=Math.min(a9881RoundMs(maxMs-done),A9881_SAMPLE_EXT_MS);if(p2>0){requested+=p2;done+=a45ReplayChunk(p2)}
+      }
+    }finally{a8Take=oldTake}
+    const after={
+      kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0),
+      hp:Number(state.player?.hp||0),mp:Number(state.player?.mp||0),maxHp:Number(state.player?.maxHp||1),maxMp:Number(state.player?.maxMp||1),
+      lv:Number(state.player?.lv||1),playerGold:Number(state.player?.gold||0)
+    };
+    return{
+      done,kills:Math.max(0,after.kills-before.kills),exp:Math.max(0,after.exp-before.exp),gold:Math.max(0,after.gold-before.gold),items:Math.max(0,after.items-before.items),
+      hp0:before.hp,hp1:after.hp,mp0:before.mp,mp1:after.mp,maxHp1:after.maxHp,maxMp1:after.maxMp,lv0:before.lv,lv1:after.lv,
+      playerGold0:before.playerGold,playerGold1:after.playerGold,consumed,requested,stopped:done+1<A45_OFFLINE_TICK_MS?true:(done+1<requested||!!state.dead||Number(state.player?.hp||0)<=0)
+    };
+  }
+
+  function a9881SkillResourceSensitive(){
+    const a=state?.autoCombat||{};
+    return !!(a.attackSkill||a.openSkill||a.healSkill||a.healSkillId||a.convertSkill||Object.values(a.autoBuffSkills||{}).some(Boolean));
+  }
+  function a9881LimitFastMs(sample,proposed){
+    let ms=Math.max(0,Number(proposed)||0);if(!(sample?.done>0)||!(sample?.kills>0))return 0;
+    const killRate=sample.kills/sample.done;
+    if(killRate>0)ms=Math.min(ms,A9881_MAX_BATCH_KILLS/killRate);
+    const dh=Number(sample.hp1)-Number(sample.hp0),a=state?.autoCombat||{};
+    const healSupply=!!(a.heal&&(a8Count(a.healPotion||'potion_heal')>0||a.autoRestock?.[a.healPotion||'potion_heal']))||!!a.healSkill;
+    // 有穩定自動治療時，10 秒樣本的短暫 HP 波動不應把 30 分鐘快轉切成數十秒；
+    // 但若樣本結束已低於 35% HP，仍保守縮短並重新校準。
+    if(dh<0&&Number(sample.hp1)>1&&(!healSupply||Number(sample.hp1)<Number(sample.maxHp1||1)*.35)){const loss=(-dh)/sample.done,safe=(Number(sample.hp1)-1)/Math.max(1e-9,loss)*.82;if(safe>0)ms=Math.min(ms,safe)}
+    const dm=Number(sample.mp1)-Number(sample.mp0);
+    if(dm<0&&a9881SkillResourceSensitive()){
+      const loss=(-dm)/sample.done,threshold=Math.max(0,Number(sample.maxMp1||1)*.05),safe=(Number(sample.mp1)-threshold)/Math.max(1e-9,loss)*.85;
+      if(safe>0)ms=Math.min(ms,safe);
+    }
+    return a9881RoundMs(ms);
+  }
+
+  function a9881RestockEnabled(id){return !!state?.autoCombat?.autoRestock?.[id]}
+  function a9881ConsumeOneKind(id,need,allowRestock=true){
+    need=Math.max(0,Math.floor(Number(need)||0));if(!need)return{need:0,used:0,left:0};
+    let left=need,used=0,guard=0;
+    while(left>0&&guard++<250){
+      let have=Math.max(0,Number(a8Count(id)||0));
+      if(allowRestock&&a9881RestockEnabled(id)&&typeof a97RestockOne==='function'){
+        try{a97RestockOne(id)}catch(e){}
+        have=Math.max(0,Number(a8Count(id)||0));
+      }
+      if(have<=0)break;
+      const take=Math.min(left,have);if(!(take>0)||!a8Take(id,take))break;used+=take;left-=take;
+    }
+    if(state?.equipment?.arrow===id&&a8Count(id)<=0)delete state.equipment.arrow;
+    return{need,used,left};
+  }
+  function a9881ApplyScaledConsumables(sample,fastMs){
+    if(!(sample?.done>0)||!(fastMs>0))return{criticalFraction:1,rows:[]};
+    const ratio=fastMs/sample.done,req={};for(const [id,n] of Object.entries(sample.consumed||{}))req[id]=a9881StochasticRound(Number(n||0)*ratio);
+    const rows=[],bow=!!a8Item(state?.equipment?.wpn)?.isBow;let criticalFraction=1;
+    // 箭矢先處理；弓手沒有足夠箭且補貨也買不起時，只允許快轉到箭矢耗盡點。
+    for(const [id,need] of Object.entries(req)){
+      const critical=bow&&!!a8Item(id)?.isArrow;if(!critical||need<=0)continue;
+      const r=a9881ConsumeOneKind(id,need,true);rows.push({id,critical,...r});if(r.left>0)criticalFraction=Math.min(criticalFraction,r.used/Math.max(1,r.need));
+    }
+    if(criticalFraction<1)return{criticalFraction:Math.max(0,criticalFraction),rows,req};
+    for(const [id,need] of Object.entries(req)){
+      if(need<=0||(bow&&a8Item(id)?.isArrow))continue;const r=a9881ConsumeOneKind(id,need,true);rows.push({id,critical:false,...r});
+    }
+    return{criticalFraction:1,rows,req};
+  }
+
+  function a9881DirectKillBatch(kills,durationMs){
+    kills=Math.max(0,Math.floor(Number(kills)||0));durationMs=Math.max(0,Number(durationMs)||0);if(!kills){A45_SIM_NOW+=durationMs;A45_SIM_EPOCH+=durationMs;return 0}
+    const oldRunning=!!state.running,oldTarget=Number(state.target||0);state.running=true;let done=0,lastClock=0;
+    const spacing=durationMs/Math.max(1,kills),oldShow=(typeof a67ShowDrop==='function'?a67ShowDrop:null);
+    try{
+      if(oldShow)a67ShowDrop=function(){};
+      a45WithQuietRuntime(()=>{
+        for(let k=0;k<kills;k++){
+          if(state.dead)break;A45_SIM_NOW+=spacing;A45_SIM_EPOCH+=spacing;lastClock+=spacing;
+          const x=newMob();if(!x)break;x.dead=false;x.hp=x.maxHp;state.mobs=Array.isArray(state.mobs)?state.mobs:Array(MOB_COUNT).fill(null);state.mobs[0]=x;state.target=0;
+          const k0=Number(state.session?.kills||0);killMob(0);if(Number(state.session?.kills||0)>k0)done++;else break;
+        }
+      });
+    }finally{if(oldShow)a67ShowDrop=oldShow;state.running=oldRunning;state.target=Math.max(0,Math.min(MOB_COUNT-1,oldTarget))}
+    if(lastClock<durationMs){const d=durationMs-lastClock;A45_SIM_NOW+=d;A45_SIM_EPOCH+=d}
+    try{spawnAll();a45NormalizeCombatClock(A45_SIM_NOW)}catch(e){}
+    return done;
+  }
+  function a9881ApplyResourceTrend(sample,fastMs){
+    if(!(sample?.done>0)||!(fastMs>0))return;
+    const ratio=fastMs/sample.done,dh=(Number(sample.hp1)-Number(sample.hp0))*ratio,dm=(Number(sample.mp1)-Number(sample.mp0))*ratio;
+    const hpMax=Math.max(1,Number(state.player?.maxHp||1)),mpMax=Math.max(0,Number(state.player?.maxMp||0));
+    state.player.hp=Math.max(1,Math.min(hpMax,Number(state.player.hp||0)+dh));
+    state.player.mp=Math.max(0,Math.min(mpMax,Number(state.player.mp||0)+dm));
+  }
+
+  function a9881FastProcess(job,notify=true){
+    if(!state||!job||typeof job!=='object')return false;a45EnsureState();a9881EnsureState();
+    const token=++A9881_TOKEN;A9881_PROCESSING=true;
+    state.a45.offlineSettling=true;state.a45.offlineJob=job;state.running=false;
+    const stat={build:A9881_BUILD,startedWall:performance.now(),exactMs:0,fastMs:0,directKills:0,segments:0,fallback:'',mapId:String(state.mapId||''),totalMs:Number(job.totalElapsed||0)};
+    state.a9881.active=true;state.a9881.current=stat;
+
+    const finish=(reason='done')=>{
+      A9881_PROCESSING=false;if(A9881_TIMER){clearTimeout(A9881_TIMER);A9881_TIMER=0}
+      stat.wallMs=Math.max(0,performance.now()-stat.startedWall);stat.reason=reason;state.a9881.active=false;state.a9881.last={...stat,at:Date.now()};state.a9881.current=null;
+      return a45FinishOffline(job,notify);
+    };
+    const step=()=>{
+      if(!state||token!==A9881_TOKEN)return;
+      if(!state.a45?.offlineSettling){A9881_PROCESSING=false;A9881_TIMER=0;return}
+      if(state.dead||Number(job.remaining||0)<A45_OFFLINE_TICK_MS)return finish(state.dead?'dead':'done');
+      const wall0=performance.now(),segmentBudget=Math.min(A9881_SEGMENT_MS,Number(job.remaining||0)),before=a45OfflineSummaryBefore();
+      const sample=a9881Calibrate(segmentBudget);stat.exactMs+=Number(sample.done||0);let processed=Number(sample.done||0),fastMs=0,batchKills=0;
+      if(!(sample.done>0))return finish('zero-progress');
+      if(!sample.stopped&&!state.dead&&sample.kills>0&&processed<segmentBudget){
+        fastMs=a9881LimitFastMs(sample,segmentBudget-processed);
+        if(fastMs>0){
+          // 先以校準的真實消耗量扣除補給；弓手箭矢不足時縮短本批快轉時間。
+          const c=a45WithQuietRuntime(()=>a9881ApplyScaledConsumables(sample,fastMs));
+          if(c&&Number(c.criticalFraction)<1){fastMs=a9881RoundMs(fastMs*Math.max(0,Number(c.criticalFraction)||0))}
+          if(fastMs>0){
+            const expected=sample.kills*(fastMs/sample.done);batchKills=a9881StochasticRound(expected);
+            batchKills=a9881DirectKillBatch(batchKills,fastMs);a9881ApplyResourceTrend(sample,fastMs);processed+=fastMs;stat.fastMs+=fastMs;stat.directKills+=batchKills;
+          }
+        }
+      }
+      const delta=a45OfflineDiff(before);a45MergeAccum(job.accum,delta);job.remaining=Math.max(0,Number(job.remaining||0)-processed);job.processed=Number(job.processed||0)+processed;stat.segments++;
+      if(processed>0&&state.a36?.background)state.a36.background.hiddenAt=Number(state.a36.background.hiddenAt||Date.now())+processed;
+      state.running=false;state.a45.offlineJob=job;state.a9881.current={...stat,lastSample:{ms:sample.done,kills:sample.kills,lv0:sample.lv0,lv1:sample.lv1},lastBatch:{ms:fastMs,kills:batchKills},wallStepMs:performance.now()-wall0};
+      try{save();a30Checkpoint('a9881-fast-offline-segment',true)}catch(e){}
+      if(state.dead||Number(job.remaining||0)<A45_OFFLINE_TICK_MS)return finish(state.dead?'dead':'done');
+      // 校準沒有擊殺時不憑空造收益；下一段仍會重新精確校準。
+      // 為避免長時間同步阻塞，每段至少讓出一次事件迴圈。
+      A9881_TIMER=setTimeout(step,Math.max(0,performance.now()-wall0>A9881_MAX_WALL_STEP_MS?8:0));
+    };
+    step();return state.a45?.offlineSettling?{pending:true,fast:true,elapsed:job.totalElapsed,remaining:job.remaining}:state.a45?.offlineLastReport||{pending:false};
+  }
+
+  // 最後一層接管 Alpha45.4 批次控制器：短離線/特殊地圖仍走精確 replay；一般長時間離線才進高速混合模式。
+  a45ProcessOffline=function(job,notify=true){
+    a9881EnsureState();
+    if(!a9881CanFast(job))return _a9881ExactProcessOffline(job,notify);
+    return a9881FastProcess(job,notify);
+  };
+
+  a45FinishOffline=function(job,notify=true){
+    const fast=!!state?.a9881?.active,cur=state?.a9881?.current?{...state.a9881.current}:null;
+    const r=_a9881FinishBase(job,notify);
+    if(state){a9881EnsureState();if(fast&&cur){cur.wallMs=Math.max(0,Number(cur.wallMs||0)||0);state.a9881.last={...(state.a9881.last||{}),...cur,finishedAt:Date.now()};state.a9881.active=false;state.a9881.current=null}try{save()}catch(e){}}
+    return r;
+  };
+
+  function a9881ApplyOverlay(){
+    const m=typeof a48EnsureSettleOverlay==='function'?a48EnsureSettleOverlay():document.getElementById('a48-settle-overlay');if(!m)return;
+    const sm=m.querySelector('small'),em=m.querySelector('em');if(sm)sm.textContent='FAST OFFLINE';if(em)em.textContent='高速混合結算：短段用實際戰鬥校準，長段以同一套擊殺／掉落規則批次結算，避免整段逐 100ms 重播。';
+  }
+  if(_a9881A48UpdateBase)a48UpdateSettleOverlay=function(){
+    const r=_a9881A48UpdateBase.apply(this,arguments);a9881ApplyOverlay();
+    const j=state?.a45?.offlineJob,txt=document.querySelector('#a48-settle-text');if(txt&&state?.a45?.offlineSettling){const total=Math.max(1,Number(j?.totalElapsed||0)),p=Math.max(0,Number(j?.processed||0)),pct=Math.max(0,Math.min(100,p/total*100));txt.textContent=pct.toFixed(0)+'% · 已結算 '+a36ElapsedText(p)+' / '+a36ElapsedText(total)}return r;
+  };
+
+  function a9881ApplyVersion(){
+    a9881EnsureState();a9881ApplyOverlay();document.title=A41_BRAND+' · '+A9881_BUILD;
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9881_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.81：長時間離線改用高速混合結算，短段精確校準＋長段批次收益，降低 PC 等待與手機高負載發熱。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.81｜高速離線收益結算｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9881_BUILD+'</b><p>離線收益不再把 24 小時逐 100ms 全量重播。一般獵場改成「短段真實戰鬥校準＋長段批次擊殺」，EXP、金幣、怪物掉落、地區掉落與等級提升仍走同一套現行 killMob / rollDrop 邏輯。</p><p>弓箭、藥水與其他自動補給會依校準期間的實際消耗量等比例扣除，並沿用現行低存量自動補貨。特殊 Boss／系統單位與短時間離線仍自動退回精確模式。</p><small>本版未新增媒體；GitHub Pages 只需替換 index.html。</small>';
+  }
+
+  const _a9881RenderBase=render;render=function(){const r=_a9881RenderBase.apply(this,arguments);try{a9881ApplyVersion()}catch(e){}return r};
+  const _a9881InitBase=init;init=function(){const r=_a9881InitBase.apply(this,arguments);try{a9881ApplyVersion()}catch(e){}setTimeout(()=>{try{a9881ApplyVersion()}catch(e){}},0);return r};
+
+  function a9881Audit(){
+    const issues=[];if(A45_OFFLINE_TICK_MS!==100)issues.push('精確離線 tick 不再是 100ms');if(A46_OFFLINE_CAP_MS!==86400000)issues.push('24h 上限遺失');
+    if(typeof a45ReplayChunk!=='function')issues.push('精確 replay API 遺失');if(typeof killMob!=='function'||typeof rollDrop!=='function')issues.push('現行擊殺/掉落鏈遺失');
+    if(typeof a97RestockOne!=='function')issues.push('自動補貨 API 遺失');if(typeof a9881FastProcess!=='function')issues.push('高速引擎遺失');
+    return{ok:issues.length===0,issues,build:A9881_BUILD,exactTickMs:A45_OFFLINE_TICK_MS,exactLimitMs:A9881_EXACT_LIMIT_MS,segmentMs:A9881_SEGMENT_MS,sampleBaseMs:A9881_SAMPLE_BASE_MS,maxBatchKills:A9881_MAX_BATCH_KILLS,capMs:A46_OFFLINE_CAP_MS};
+  }
+  function a9881PerfProbe(simMs=2*60*60*1000){
+    const out={ok:false},oldState=state?JSON.parse(JSON.stringify(state)):null,oldNow=A45_SIM_NOW,oldEpoch=A45_SIM_EPOCH;
+    try{
+      if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+      a76TestReset('knight',60);state.inVillage=false;state.mapId='zone_01';state.lastHuntMap='zone_01';state.dead=false;state.running=false;
+      // 純效能 probe 不測生存：用巨大 HP/MP 與負 EXP 避免死亡／升級把 benchmark 提前截斷。
+      state.player.maxHp=1e9;state.player.hp=1e9;state.player.maxMp=1e9;state.player.mp=1e9;state.player.exp=-1e12;spawnAll();a9881EnsureState();
+      A45_SIM_NOW=100000;A45_SIM_EPOCH=Date.now();const job={reason:'a9881-perf',totalElapsed:Number(simMs),remaining:Number(simMs),processed:0,wanted:true,sameMap:true,accum:{kills:0,exp:0,gold:0,items:{}}};
+      const t=performance.now(),before=a45OfflineSummaryBefore();const sample=a9881Calibrate(Math.min(A9881_SEGMENT_MS,simMs));let fast=a9881LimitFastMs(sample,Math.max(0,simMs-sample.done));
+      const c=a45WithQuietRuntime(()=>a9881ApplyScaledConsumables(sample,fast));if(c?.criticalFraction<1)fast=a9881RoundMs(fast*c.criticalFraction);
+      const k=a9881StochasticRound(sample.done?sample.kills*(fast/sample.done):0),dk=a9881DirectKillBatch(k,fast);a9881ApplyResourceTrend(sample,fast);const d=a45OfflineDiff(before),wall=performance.now()-t;
+      out.ok=sample.done>0&&wall<5000;Object.assign(out,{wallMs:wall,sampleMs:sample.done,sampleKills:sample.kills,fastMs:fast,directKills:dk,diff:d,simMs});
+    }catch(e){out.error=String(e?.stack||e)}finally{state=oldState;A45_SIM_NOW=oldNow;A45_SIM_EPOCH=oldEpoch;try{if(state)render()}catch(e){}}
+    return out;
+  }
+  async function a9881IntegrationProbe(simMs=2*60*60*1000){
+    const oldState=state?JSON.parse(JSON.stringify(state)):null,oldNow=A45_SIM_NOW,oldEpoch=A45_SIM_EPOCH,started=performance.now();
+    try{
+      if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+      a76TestReset('knight',60);state.inVillage=false;state.mapId='zone_01';state.lastHuntMap='zone_01';state.dead=false;state.running=false;state.player.maxHp=1e9;state.player.hp=1e9;state.player.maxMp=1e9;state.player.mp=1e9;state.player.exp=-1e12;spawnAll();a9881EnsureState();
+      state.a36=(state.a36&&typeof state.a36==='object')?state.a36:{};state.a36.background={...(state.a36.background||{}),active:true,wasRunning:true,mapId:state.mapId,hiddenAt:Date.now()-Number(simMs)};
+      A45_SIM_NOW=0;A45_SIM_EPOCH=Number(state.a36.background.hiddenAt);
+      const job={reason:'a9881-integration',totalElapsed:Number(simMs),remaining:Number(simMs),processed:0,wanted:true,sameMap:true,accum:{kills:0,exp:0,gold:0,items:{}}};
+      a45ProcessOffline(job,false);
+      const deadline=performance.now()+30000;while(state?.a45?.offlineSettling&&performance.now()<deadline)await new Promise(r=>setTimeout(r,10));
+      const wall=performance.now()-started,rep=state?.a45?.offlineLastReport||null,last=state?.a9881?.last||null;
+      return{ok:!state?.a45?.offlineSettling&&wall<30000,wallMs:wall,simMs,report:rep,last,pending:!!state?.a45?.offlineSettling};
+    }catch(e){return{ok:false,error:String(e?.stack||e),wallMs:performance.now()-started}}
+    finally{state=oldState;A45_SIM_NOW=oldNow;A45_SIM_EPOCH=oldEpoch;A9881_PROCESSING=false;if(A9881_TIMER){clearTimeout(A9881_TIMER);A9881_TIMER=0}try{if(state)render()}catch(e){}}
+  }
+  async function a9881FullRegression(){let base={ok:true,skipped:true};try{if(window.__A9880_TEST__?.fullRegression)base=await window.__A9880_TEST__.fullRegression()}catch(e){base={ok:false,error:String(e)}}const own=a9881Audit();a9881ApplyVersion();return{ok:base?.ok!==false&&own.ok,build:A9881_BUILD,base,current:own}}
+
+  a9881ApplyVersion();
+  window.__A9881_TEST__={build:A9881_BUILD,audit:a9881Audit,perf:a9881PerfProbe,integration:a9881IntegrationProbe,fullRegression:a9881FullRegression,canFast:(ms=3600000)=>a9881CanFast({remaining:ms}),last:()=>state?.a9881?.last||null,applyVersion:a9881ApplyVersion};
+})();
+
 })();
 </script>
 
@@ -27821,4 +29064,75 @@ const A9874_BUILD='B1.0 Alpha98.74';
 
 
 
+
+
+<!-- ===== Alpha98.75：手機 NPC 彈窗改用可視視窗 + 安全區 ===== -->
+<style id="a9875-style">
+@media (max-width:600px){
+  body.a9846-reference-ui #village-action.a972-open,
+  body.a9846-reference-ui.a9817-villageui #village-action.a972-open{
+    position:fixed!important;
+    left:6px!important;
+    right:6px!important;
+    top:calc(var(--a9875-vvo,0px) + max(6px, env(safe-area-inset-top,0px)))!important;
+    transform:none!important;
+    width:auto!important;
+    max-width:none!important;
+    height:calc(var(--a9875-vvh,100dvh) - 70px - max(6px, env(safe-area-inset-top,0px)))!important;
+    max-height:calc(var(--a9875-vvh,100dvh) - 70px - max(6px, env(safe-area-inset-top,0px)))!important;
+    min-height:0!important;
+    margin:0!important;
+    padding:0!important;
+    overflow:hidden!important;
+    box-sizing:border-box!important;
+    z-index:6000!important;
+    border-radius:12px!important;
+    display:flex!important;
+    flex-direction:column!important;
+  }
+  body.a9846-reference-ui #village-action .a9846-npc-head{
+    flex:0 0 46px!important;
+    height:46px!important;
+    min-height:46px!important;
+    padding:0 10px!important;
+  }
+  body.a9846-reference-ui #village-action .a9846-npc-scroll{
+    flex:1 1 auto!important;
+    min-height:0!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    overscroll-behavior:contain!important;
+    -webkit-overflow-scrolling:touch!important;
+    padding:6px 8px 10px!important;
+  }
+  body.a9846-reference-ui #village-action .a972-npc-close{
+    flex:0 0 44px!important;
+    width:calc(100% - 16px)!important;
+    height:44px!important;
+    min-height:44px!important;
+    margin:6px 8px 8px!important;
+    padding:0!important;
+    line-height:42px!important;
+  }
+  body.a9846-reference-ui.a9846-npc-open{overflow:hidden!important;}
+  #a9846-dim.open{position:fixed!important;inset:0!important;}
+}
+@media (max-width:380px){
+  body.a9846-reference-ui #village-action.a972-open,
+  body.a9846-reference-ui.a9817-villageui #village-action.a972-open{
+    left:4px!important;right:4px!important;
+  }
+  body.a9846-reference-ui #village-action .a9846-npc-scroll{padding-left:6px!important;padding-right:6px!important}
+}
+</style>
+
+<style id="a9876-style">
+.a9876-interface-mode{border:1px solid #5a4320;border-radius:10px;background:#171008;padding:12px;margin:0 0 10px}
+.a9876-interface-mode>b{display:block;color:#e6c65a;font-size:14px;margin-bottom:5px}
+.a9876-interface-mode>small{display:block;color:#a99570;line-height:1.55;margin-bottom:9px}
+.a9876-interface-mode .a9812-choice{margin:0}
+.a9876-interface-mode .a9812-current{margin-top:8px}
+@media(max-width:600px){.a9876-interface-mode{padding:10px}.a9876-interface-mode .a9812-choice{grid-template-columns:1fr 1fr;gap:6px}.a9876-interface-mode .a9812-choice button{min-height:46px;font-size:12px}}
+@media(max-width:360px){.a9876-interface-mode .a9812-choice{grid-template-columns:1fr}}
+</style>
 </body></html>
