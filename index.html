@@ -29052,6 +29052,438 @@ body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a9850-titl
   window.__A9881_TEST__={build:A9881_BUILD,audit:a9881Audit,perf:a9881PerfProbe,integration:a9881IntegrationProbe,fullRegression:a9881FullRegression,canFast:(ms=3600000)=>a9881CanFast({remaining:ms}),last:()=>state?.a9881?.last||null,applyVersion:a9881ApplyVersion};
 })();
 
+
+// ===== Alpha98.82：迪嘉勒廷空白面板 + 50級試煉流程視窗修正 =====
+const A9882_BUILD='B1.0 Alpha98.82';
+(()=>{
+  function a9882AfterTrialRender(){
+    const box=document.getElementById('village-action');
+    if(!box)return;
+    // 50級試煉在「接取／交付／交換」後會直接重畫 innerHTML；重新補回浮動視窗殼、關閉鍵與固定標頭。
+    queueMicrotask(()=>{
+      try{
+        if(String(state?._a7NpcId||'')!=='npc_digallatin')return;
+        a972ShowNpcAction();
+        if(typeof a9846DecorateNpc==='function')a9846DecorateNpc();
+      }catch(e){console.error('Alpha98.82 trial redecorate',e)}
+    });
+  }
+  function a9882TrialStatusHtml(kind,text){
+    return '<div class="village-section-title">迪嘉勒廷 · 50級試煉</div><div class="a9-service-note '+(kind==='warn'?'warn':'ok')+'">'+text+'</div>';
+  }
+  // 98.46 會把每個 NPC 的第一個 .a7-note 當成商店說明隱藏。
+  // 舊 50級試煉恰好用 .a7-note 顯示「職業不支援／未滿50級」，所以玩家只剩標頭與金幣，看起來完全空白。
+  // 這裡只重做迪嘉勒廷 renderer，不改任務材料、掉落、職業或獎勵規則。
+  a9RenderTrial50=function(npc){
+    a9EnsureState();
+    const box=document.getElementById('village-action');
+    if(!box)return false;
+    const c=a9TrialCfg();
+    if(!c){
+      const cls=String(state?.player?.cls||'');
+      const cn={dark:'黑暗妖精',knight:'騎士',elf:'妖精',mage:'法師'}[cls]||'目前職業';
+      box.innerHTML=a9882TrialStatusHtml('warn','<b>'+escapeHtml(cn)+'</b>目前沒有迪嘉勒廷的 50 級試煉內容。現行資料只支援騎士、妖精、法師。');
+      a9882AfterTrialRender();return true;
+    }
+    if(Number(state.player.lv||0)<50){
+      box.innerHTML=a9882TrialStatusHtml('warn','需要 <b>Lv.50</b> 才能接取。目前 Lv.'+Number(state.player.lv||0)+'。');
+      a9882AfterTrialRender();return true;
+    }
+    const st=a9Stage();
+    if(st===0){
+      box.innerHTML=a9882TrialStatusHtml('ok',escapeHtml(npc?.d||'達到 50 級後可接取職業試煉。'))+'<button class="a8-btn alt" id="a9-trial-accept">接取試煉</button>';
+      const b=document.getElementById('a9-trial-accept');if(b)b.onclick=()=>{if(a9TrialAccept())a9RenderTrial50(npc)};
+      a9882AfterTrialRender();return true;
+    }
+    if(st>=1&&st<=c.stages.length){
+      const [id,cnt,hint]=c.stages[st-1],have=a8Count(id);
+      box.innerHTML=a9882TrialStatusHtml('ok','第 '+st+'/'+c.stages.length+' 階段<br>交付：<b>'+escapeHtml(a8Item(id)?.n||id)+' ×'+cnt+'</b>（持有 '+have+'）<br>線索：'+escapeHtml(hint))+'<button class="a8-btn alt" id="a9-trial-turn" '+(have>=cnt?'':'disabled')+'>交付</button>';
+      const b=document.getElementById('a9-trial-turn');if(b)b.onclick=()=>{if(a9TrialTurnIn())a9RenderTrial50(npc)};
+      a9882AfterTrialRender();return true;
+    }
+    const matCount=a8Count(c.mat);
+    box.innerHTML='<div class="village-section-title">迪嘉勒廷 · 最終交換</div><div class="a9-service-note ok">前半段完成。使用 '+escapeHtml(a8Item(c.mat)?.n||c.mat)+' ×1 換取職業試煉裝備。</div><div class="a9-trial-grid">'+c.rewards.map(id=>'<div class="a9-trial-row"><div><b>'+escapeHtml(a8Item(id)?.n||id)+'</b><small>材料持有 '+matCount+'</small></div><button class="a8-btn alt" data-a9-trial-reward="'+id+'" '+(matCount>0?'':'disabled')+'>交換</button></div>').join('')+'</div>';
+    box.querySelectorAll('[data-a9-trial-reward]').forEach(b=>b.onclick=()=>{if(a9TrialExchange(b.dataset.a9TrialReward))a9RenderTrial50(npc)});
+    a9882AfterTrialRender();return true;
+  };
+
+  function a9882ApplyVersion(){
+    document.title=A41_BRAND+' · '+A9882_BUILD;
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9882_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.82：修正迪嘉勒廷在黑暗妖精／未滿50級時只剩標頭的空白面板，並修正接取、交付、交換後 NPC 浮動視窗殼可能被重畫消失。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.82｜迪嘉勒廷50級試煉顯示／流程視窗修正｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9882_BUILD+'</b><p>修正迪嘉勒廷（50級試煉）在不支援職業或未達 Lv50 時，警告文字被新版 NPC 樣式誤當商店說明隱藏，造成整個內容區空白。</p><p>同時修正試煉按鈕操作後 renderer 重畫內容時，固定標頭／捲動區／底部關閉鍵可能被一起清掉的問題。</p><small>不改任務材料、掉落率、職業獎勵或媒體資源；GitHub Pages 只需替換 index.html。</small>';
+  }
+
+  function a9882VisibleBody(){
+    const box=document.getElementById('village-action'),scroll=box?.querySelector('.a9846-npc-scroll')||box;
+    if(!scroll)return{ok:false,text:'',buttons:0,close:false};
+    const els=[...scroll.querySelectorAll('.a9-service-note,.a9-trial-row,#a9-trial-accept,#a9-trial-turn,[data-a9-trial-reward]')].filter(el=>{const cs=getComputedStyle(el),r=el.getBoundingClientRect();return cs.display!=='none'&&cs.visibility!=='hidden'&&r.width>0&&r.height>0});
+    return{ok:els.length>0,text:String(scroll.textContent||'').replace(/\s+/g,' ').trim(),buttons:scroll.querySelectorAll('#a9-trial-accept,#a9-trial-turn,[data-a9-trial-reward]').length,close:!!box?.querySelector(':scope > .a972-npc-close'),head:!!box?.querySelector(':scope > .a9846-npc-head')};
+  }
+  async function a9882Probe(){
+    const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const cases=[],bad=[];
+    try{
+      const f=a76TestFindNpc('npc_digallatin');if(!f)throw new Error('找不到迪嘉勒廷');
+      const run=async(cls,lv,stage,label)=>{
+        a76TestReset(cls,1);state.player.lv=lv;a9EnsureState();if(state.trial50&&Object.prototype.hasOwnProperty.call(state.trial50,cls))state.trial50[cls]=stage||0;a76TestVillage(f.townId);a7OpenNpc('npc_digallatin');a972ShowNpcAction();await new Promise(r=>setTimeout(r,30));const v=a9882VisibleBody();cases.push({label,cls,lv,stage,...v});if(!v.ok||!v.head||!v.close)bad.push(label+':blank-or-shell-missing');return v;
+      };
+      const dark=await run('dark',60,0,'黑暗妖精Lv60');if(!/沒有迪嘉勒廷/.test(dark.text))bad.push('dark-message-missing');
+      const low=await run('knight',49,0,'騎士Lv49');if(!/Lv\.50/.test(low.text))bad.push('lv49-message-missing');
+      const start=await run('knight',60,0,'騎士Lv60未接取');if(start.buttons<1)bad.push('accept-button-missing');
+      // 實際點一次接取，確認重畫後固定頭、內容、關閉鍵仍存在。
+      document.querySelector('#a9-trial-accept')?.click();await new Promise(r=>setTimeout(r,30));const after=a9882VisibleBody();cases.push({label:'接取後重畫',...after});if(!after.ok||!after.head||!after.close||after.buttons<1)bad.push('after-accept-shell-or-turnin-missing');
+    }catch(e){bad.push(String(e?.stack||e))}
+    finally{
+      try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push('restore:'+String(e?.stack||e))}
+      a9882ApplyVersion();
+    }
+    return{ok:bad.length===0,build:A9882_BUILD,cases,bad};
+  }
+  async function a9882FullRegression(){
+    let base={ok:true,skipped:true};try{if(window.__A9881_TEST__?.fullRegression)base=await window.__A9881_TEST__.fullRegression()}catch(e){base={ok:false,error:String(e)}}
+    const trial=await a9882Probe();a9882ApplyVersion();return{ok:base?.ok!==false&&trial.ok,build:A9882_BUILD,base,trial};
+  }
+  const _a9882RenderBase=render;render=function(){const r=_a9882RenderBase.apply(this,arguments);a9882ApplyVersion();return r};
+  const _a9882InitBase=init;init=function(){const r=_a9882InitBase.apply(this,arguments);setTimeout(a9882ApplyVersion,0);return r};
+  a9882ApplyVersion();
+  window.__A9882_TEST__={build:A9882_BUILD,probe:a9882Probe,fullRegression:a9882FullRegression,visible:a9882VisibleBody,applyVersion:a9882ApplyVersion,previous:window.__A9881_TEST__};
+})();
+
+
+// ===== Alpha98.83：製作 NPC 操作後固定視窗殼恢復 =====
+const A9883_BUILD='B1.0 Alpha98.83';
+(()=>{
+  function a9883FindNpcFallback(npc){
+    if(npc)return npc;
+    try{return a9846FindNpc?.()||a7Town?.()?.npcs?.find(n=>String(n.id)===String(state?._a7NpcId||''))||null}catch(e){return null}
+  }
+  function a9883RestoreCraftShell(npc,scrollTop=0){
+    const box=document.getElementById('village-action');npc=a9883FindNpcFallback(npc);
+    if(!box||!state||!a7IsVillage()||!npc)return false;
+    if(npc.id)state._a7NpcId=npc.id;
+    try{a972ShowNpcAction()}catch(e){}
+    try{a9846DecorateNpc()}catch(e){console.error('Alpha98.83 craft redecorate',e)}
+    try{window.__A9855_TEST__?.clean?.()}catch(e){}
+    try{window.__A9850_TEST__?.normalize?.()}catch(e){}
+    // clean / normalize 也可能搬動 DOM；最後再確認固定標頭、scroll 與關閉鍵完整存在。
+    if(!box.querySelector(':scope > .a9846-npc-head')||!box.querySelector(':scope > .a9846-npc-scroll')||box.querySelectorAll(':scope > .a972-npc-close').length!==1){
+      try{a972ShowNpcAction()}catch(e){}
+      try{a9846DecorateNpc()}catch(e){}
+    }
+    const sc=box.querySelector(':scope > .a9846-npc-scroll');if(sc)sc.scrollTop=Math.max(0,Number(scrollTop)||0);
+    return !!(box.classList.contains('a972-open')&&box.querySelector(':scope > .a9846-npc-head')&&sc&&box.querySelectorAll(':scope > .a972-npc-close').length===1);
+  }
+
+  // 製作 renderer 與商店舊問題相同：製作成功後 a53DoCraft -> a8RenderCraft 會用 innerHTML
+  // 重畫整個 #village-action，連 Alpha98.46 的固定標頭 / scroll / 關閉鍵一起洗掉。
+  // 這裡在「最終 a8RenderCraft」外層統一補殼，不改任何配方、材料、產量與原子交易規則。
+  const _a9883CraftBase=a8RenderCraft;
+  a8RenderCraft=function(npc){
+    const box=document.getElementById('village-action');
+    const activeBefore=!!box?.classList.contains('a972-open')||String(state?._a7NpcId||'')===String(npc?.id||'');
+    const sc=box?.querySelector(':scope > .a9846-npc-scroll'),oldScroll=Number(sc?.scrollTop||box?.scrollTop||0);
+    const r=_a9883CraftBase.apply(this,arguments);
+    if(activeBefore)queueMicrotask(()=>a9883RestoreCraftShell(npc,oldScroll));
+    return r;
+  };
+
+  function a9883ShellAudit(box=document.getElementById('village-action')){
+    const issues=[];
+    if(!box?.classList.contains('a972-open'))issues.push('NPC 視窗已關閉/卡住');
+    if(!box?.querySelector(':scope > .a9846-npc-head'))issues.push('固定標頭遺失');
+    if(!box?.querySelector(':scope > .a9846-npc-scroll'))issues.push('捲動內容區遺失');
+    if((box?.querySelectorAll(':scope > .a972-npc-close').length||0)!==1)issues.push('底部關閉鍵異常');
+    if(!box?.querySelector('[data-a973-craft],[data-a53-craft]'))issues.push('製作按鈕遺失');
+    if(box&&box.scrollWidth>box.clientWidth+3)issues.push('製作視窗水平溢出');
+    return{ok:issues.length===0,issues,head:!!box?.querySelector(':scope > .a9846-npc-head'),scroll:!!box?.querySelector(':scope > .a9846-npc-scroll'),close:box?.querySelectorAll(':scope > .a972-npc-close').length||0,buttons:box?.querySelectorAll('[data-a973-craft],[data-a53-craft]').length||0};
+  }
+
+  async function a9883Probe(){
+    const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const rows=[],bad=[];
+    try{
+      for(const [tid,t] of Object.entries(DATA.towns||{}))for(const npc of(t.npcs||[])){
+        let recipes=[];try{recipes=a53CraftRows(npc)||[]}catch(e){}
+        if(!recipes.length)continue;
+        const recipe=recipes[0];
+        try{
+          a76TestReset('knight',60);a76TestSeedReq(recipe.req);a76TestVillage(tid);state._a7NpcId=npc.id;
+          a8RenderCraft(npc);a972ShowNpcAction();a9846DecorateNpc();
+          await new Promise(r=>setTimeout(r,0));
+          const before=a9883ShellAudit(),beforeOut=a8Count(recipe.result);
+          const btn=document.querySelector('[data-a973-craft="0"]')||document.querySelector('[data-a53-craft="0"][data-n="1"]');
+          const clickable=!!btn&&!btn.disabled;
+          if(clickable)btn.click();
+          await new Promise(r=>setTimeout(r,15));
+          const after=a9883ShellAudit(),afterOut=a8Count(recipe.result),made=clickable&&afterOut===beforeOut+Math.max(1,Number(recipe.yield||1));
+          const closeBtn=document.querySelector('#village-action > .a972-npc-close');closeBtn?.click();await new Promise(r=>setTimeout(r,0));
+          const closed=!document.getElementById('village-action')?.classList.contains('a972-open');
+          state._a7NpcId=npc.id;a8RenderCraft(npc);a972ShowNpcAction();a9846DecorateNpc();await new Promise(r=>setTimeout(r,0));
+          const reopen=a9883ShellAudit();
+          rows.push({town:tid,npc:npc.id,name:npc.n,before,after,reopen,clickable,made,closed,result:recipe.result});
+          if(!before.ok||!after.ok||!reopen.ok||!clickable||!made||!closed)bad.push({town:tid,npc:npc.id,before:before.issues,after:after.issues,reopen:reopen.issues,clickable,made,closed,result:recipe.result});
+        }catch(e){bad.push({town:tid,npc:npc.id,error:String(e?.stack||e)})}
+      }
+    }finally{
+      try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push({restore:String(e?.stack||e)})}
+      a9883ApplyVersion();
+    }
+    return{ok:bad.length===0,build:A9883_BUILD,total:rows.length,rows,bad};
+  }
+
+  function a9883ApplyVersion(){
+    document.title=A41_BRAND+' · '+A9883_BUILD;
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9883_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.83：修正製作成功後 renderer 重畫 NPC 內容，造成固定標頭、捲動區與關閉鍵被洗掉而看起來卡住。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.83｜製作NPC操作後卡住修正｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9883_BUILD+'</b><p>製作成功後不再讓 a8RenderCraft 的 innerHTML 重畫破壞 NPC 固定視窗殼；會自動恢復 NPC 標頭、可捲動內容與底部「關閉」鍵，並保留原捲動位置。</p><p>配方、材料扣除、產量、裝備材料保護與 Alpha81 原子交易規則完全不變。</p><small>本版未新增媒體；GitHub Pages 只需替換 index.html。</small>';
+  }
+  async function a9883FullRegression(){
+    let base={ok:true,skipped:true};try{if(window.__A9882_TEST__?.fullRegression)base=await window.__A9882_TEST__.fullRegression()}catch(e){base={ok:false,error:String(e)}}
+    const craft=await a9883Probe();a9883ApplyVersion();return{ok:base?.ok!==false&&craft.ok,build:A9883_BUILD,base,craft};
+  }
+  const _a9883RenderBase=render;render=function(){const r=_a9883RenderBase.apply(this,arguments);a9883ApplyVersion();return r};
+  const _a9883InitBase=init;init=function(){const r=_a9883InitBase.apply(this,arguments);setTimeout(a9883ApplyVersion,0);return r};
+  a9883ApplyVersion();
+  window.__A9883_TEST__={build:A9883_BUILD,probe:a9883Probe,audit:a9883ShellAudit,restore:a9883RestoreCraftShell,fullRegression:a9883FullRegression,applyVersion:a9883ApplyVersion,previous:window.__A9882_TEST__};
+})();
+
+
+// ===== Alpha98.84：底部經驗值條恢復 =====
+const A9884_BUILD='B1.0 Alpha98.84';
+(()=>{
+  function a9884InstallStyle(){
+    if(document.getElementById('a9884-style'))return;
+    const st=document.createElement('style');st.id='a9884-style';st.textContent=`
+/* Alpha98.46 參考圖版型曾把 #expbar 一併 display:none；98.84 恢復為真正的最下方固定列。 */
+@media(min-width:901px){
+  body.a9846-reference-ui #app{
+    grid-template-rows:minmax(360px,1fr) minmax(220px,calc(40.5vh - var(--exph))) var(--exph)!important;
+  }
+  body.a9846-reference-ui #expbar{
+    display:block!important;grid-column:1/4!important;grid-row:3!important;
+    position:relative!important;width:auto!important;height:var(--exph)!important;min-height:var(--exph)!important;
+    overflow:hidden!important;z-index:35!important;
+    background:#080604!important;border-top:1px solid #6e5824!important;
+  }
+}
+@media(max-width:900px){
+  #expbar{
+    display:block!important;position:relative!important;flex:0 0 var(--exph)!important;
+    width:100%!important;height:var(--exph)!important;min-height:var(--exph)!important;
+    overflow:hidden!important;z-index:29!important;
+    background:#080604!important;border-top:1px solid #6e5824!important;
+  }
+  #expbar .exptxt{font-size:9px!important;line-height:var(--exph)!important;white-space:nowrap!important}
+}
+`;document.head.appendChild(st);
+  }
+  function a9884ApplyVersion(){
+    a9884InstallStyle();
+    document.title=A41_BRAND+' · '+A9884_BUILD;
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9884_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.84：恢復主介面最下方 EXP 經驗值條；桌機重新納入三欄底部 Grid，手機則放在戰鬥區與底部導航列之間。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.84｜底部EXP經驗值條恢復｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9884_BUILD+'</b><p>修正 Alpha98.46 參考圖版型將 #expbar 一併隱藏，造成主介面最下方經驗值條消失。</p><p>桌機重新保留獨立 EXP Grid 列；手機則把 EXP 條放在戰鬥畫面與底部功能列之間，不遮住戰鬥按鈕。</p><small>只修介面顯示，不改 EXP 需求、升級、戰鬥或存檔資料；GitHub Pages 只需替換 index.html。</small>';
+  }
+  function a9884Audit(){
+    a9884InstallStyle();
+    const bar=document.getElementById('expbar'),fill=document.getElementById('exp-fill'),txt=document.getElementById('exp-txt');
+    const issues=[];
+    if(!bar)issues.push('找不到 #expbar');
+    else{
+      const cs=getComputedStyle(bar),r=bar.getBoundingClientRect();
+      if(cs.display==='none'||cs.visibility==='hidden'||r.width<20||r.height<8)issues.push('EXP 條仍不可見');
+      if(r.bottom>innerHeight+2)issues.push('EXP 條超出視窗底部');
+      if(r.left<-2||r.right>innerWidth+2)issues.push('EXP 條水平溢出');
+      if(innerWidth<=900){const nav=document.getElementById('mobile-nav')?.getBoundingClientRect();if(nav&&r.bottom>nav.top+2)issues.push('手機 EXP 條與底部導航重疊')}
+    }
+    if(!fill)issues.push('找不到 EXP 填充層');
+    if(!txt)issues.push('找不到 EXP 文字層');
+    if(state?.player&&txt&&!/^EXP\s/.test(String(txt.textContent||'')))issues.push('EXP 文字未更新');
+    return{ok:issues.length===0,build:A9884_BUILD,issues,viewport:{w:innerWidth,h:innerHeight},rect:bar?(()=>{const r=bar.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height,bottom:r.bottom}})():null,text:txt?.textContent||'',fillWidth:fill?.style?.width||''};
+  }
+  async function a9884Probe(){
+    const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const bad=[];let audit=null,expected='';
+    try{
+      a76TestReset('knight',35);derive();
+      const need=expNeed(state.player.lv);state.player.exp=Math.floor(need*0.4321);expected=fmt(state.player.exp)+' / '+fmt(need);render();
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      audit=a9884Audit();if(!audit.ok)bad.push(...audit.issues);
+      if(!String(audit.text||'').includes(expected))bad.push('EXP 數值文字與角色經驗不同步');
+      const pct=parseFloat(document.getElementById('exp-fill')?.style?.width||'0');if(!(pct>43&&pct<44))bad.push('EXP 填充比例錯誤');
+    }catch(e){bad.push(String(e?.stack||e))}
+    finally{
+      try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push('restore:'+String(e?.stack||e))}
+      a9884ApplyVersion();
+    }
+    return{ok:bad.length===0,build:A9884_BUILD,audit,expected,bad};
+  }
+  async function a9884FullRegression(){
+    let base={ok:true,skipped:true};try{if(window.__A9883_TEST__?.fullRegression)base=await window.__A9883_TEST__.fullRegression()}catch(e){base={ok:false,error:String(e)}}
+    const expbar=await a9884Probe();a9884ApplyVersion();return{ok:base?.ok!==false&&expbar.ok,build:A9884_BUILD,base,expbar};
+  }
+  const _a9884RenderBase=render;render=function(){const r=_a9884RenderBase.apply(this,arguments);a9884ApplyVersion();return r};
+  const _a9884InitBase=init;init=function(){const r=_a9884InitBase.apply(this,arguments);setTimeout(a9884ApplyVersion,0);return r};
+  a9884ApplyVersion();
+  window.__A9884_TEST__={build:A9884_BUILD,audit:a9884Audit,probe:a9884Probe,fullRegression:a9884FullRegression,applyVersion:a9884ApplyVersion,previous:window.__A9883_TEST__};
+})();
+
+
+// ===== Alpha98.85：Lv50 起每級 +1 可分配能力點 =====
+const A9885_BUILD='B1.0 Alpha98.85';
+(()=>{
+  const A9885_STAT_KEYS=['str','dex','con','int','wis','cha'];
+  const A9885_STAT_NAMES={str:'力量 (STR)',dex:'敏捷 (DEX)',con:'體質 (CON)',int:'智力 (INT)',wis:'精神 (WIS)',cha:'魅力 (CHA)'};
+  function a9885EarnedAt(lv){return Math.max(0,Math.floor(Number(lv||0))-49)}
+  function a9885EnsureState(){
+    if(!state?.player)return null;
+    if(!state.a9885||typeof state.a9885!=='object')state.a9885={};
+    if(!state.a9885.alloc||typeof state.a9885.alloc!=='object')state.a9885.alloc={};
+    for(const k of A9885_STAT_KEYS)state.a9885.alloc[k]=Math.max(0,Math.floor(Number(state.a9885.alloc[k]||0)));
+    state.a9885.rule='lv50-plus-one-per-level';
+    state.a9885.migrated=true;
+    return state.a9885;
+  }
+  function a9885Spent(){a9885EnsureState();return A9885_STAT_KEYS.reduce((n,k)=>n+Math.max(0,Number(state?.a9885?.alloc?.[k]||0)),0)}
+  function a9885Earned(){return a9885EarnedAt(state?.player?.lv||0)}
+  function a9885Unspent(){return Math.max(0,a9885Earned()-a9885Spent())}
+  function a9885Allocate(k){
+    if(!A9885_STAT_KEYS.includes(k)||!state?.player)return false;
+    a9885EnsureState();
+    if(a9885Unspent()<1){toast('目前沒有可分配的能力點');return false}
+    state.player.stats=state.player.stats||{};
+    state.player.stats[k]=Number(state.player.stats[k]||0)+1;
+    state.a9885.alloc[k]=Number(state.a9885.alloc[k]||0)+1;
+    derive();save();
+    log('能力點分配：'+A9885_STAT_NAMES[k]+' +1｜剩餘 '+a9885Unspent()+' 點','gain');
+    try{renderDrawers()}catch(e){try{render()}catch(_e){}}
+    return true;
+  }
+  function a9885RefundLevelStats(){
+    a9885EnsureState();
+    state.a9885.alloc=Object.fromEntries(A9885_STAT_KEYS.map(k=>[k,0]));
+    return a9885Unspent();
+  }
+
+  // 根因：舊核心 levelCheck 只提升 lv / HP / MP，從未建立 Lv50 起的能力點資源。
+  // 這裡不靠累加欄位猜數字，而是用「目前等級應得總點數 - 已分配總點數」計算，
+  // 因此舊存檔升級到本版時可自動補發：Lv50=1、Lv51=2、Lv60=11。
+  const _a9885LevelCheckBase=levelCheck;
+  levelCheck=function(){
+    const before=a9885EarnedAt(state?.player?.lv||0),r=_a9885LevelCheckBase.apply(this,arguments),after=a9885EarnedAt(state?.player?.lv||0),gain=Math.max(0,after-before);
+    if(gain>0){a9885EnsureState();log('獲得可分配能力點 +'+gain+'｜目前剩餘 '+a9885Unspent()+' 點','lv');try{toast('獲得能力點 +'+gain)}catch(e){}}
+    return r;
+  };
+
+  // 能力頁直接顯示剩餘點數與 + 鍵；顯示值仍採有效能力值，並標出真正基礎值避免裝備加成造成誤判。
+  const _a9885AttrBase=a972AttrHtml;
+  a972AttrHtml=function(){
+    a8EnsureState();a9885EnsureState();
+    const p=state.player,s=p.effectiveStats||a8EffectiveStats(),e=state.element||'',left=a9885Unspent(),earned=a9885Earned(),spent=a9885Spent();
+    const rows=A9885_STAT_KEYS.map(k=>{
+      const effective=Number(s[k]||0),base=Number(p.stats?.[k]||0),bonus=effective-base;
+      return '<div class="a972-stat a9885-stat '+k+'"><span>'+escapeHtml(A9885_STAT_NAMES[k])+'</span><div class="a9885-stat-ctl"><b>'+effective+(bonus?'<small>基礎 '+base+'</small>':'')+'</b><button type="button" data-a9885-stat="'+k+'" '+(left>0?'':'disabled')+' aria-label="'+escapeHtml(A9885_STAT_NAMES[k])+'增加1點">＋</button></div></div>';
+    }).join('');
+    const has=k=>p[k]!==undefined&&p[k]!==null&&Number.isFinite(Number(p[k])),signed=k=>has(k)?((Number(p[k])>0?'+':'')+Number(p[k])):'—',pct=k=>has(k)?(Number(p[k])+'%'):'—';
+    const extras=[
+      ['攻擊',has('atk')?String(Number(p.atk)):'—'],['額外命中',signed('hitBonus')],['魔法傷害',signed('magicDmg')],['MP恢復加成',signed('mpRegenBonus')],
+      ['迴避率 (ER)',pct('er')],['傷害減免 (DR)',has('dr')?String(Number(p.dr)):'—'],['近距離爆擊率',has('sherineMeleeCrit')?(Number(p.sherineMeleeCrit)+'%'):'—'],
+      ['遠距離爆擊率',has('sherineRangedCrit')?(Number(p.sherineRangedCrit)+'%'):'—'],['魔法爆擊率',has('sherineMagicCrit')?(Number(p.sherineMagicCrit)+'%'):'—'],
+      ['HP恢復量','—'],['火屬性抗性','—'],['水屬性抗性','—'],['風屬性抗性','—'],['地屬性抗性','—'],
+      ['攻擊速度',(Number(typeof a8AttackInterval==='function'?a8AttackInterval():.8)).toFixed(2)+'s'],['萬能藥',(Number(state.panaceaUsed||0))+'/20'],['妖精屬性',e?({fire:'火',water:'水',wind:'風',earth:'地'}[e]||e):'無']
+    ];
+    return '<div class="a9885-point-box '+(left>0?'ready':'')+'"><div><b>可分配能力點</b><strong>'+left+'</strong></div><small>Lv.50 起每升 1 級獲得 1 點｜應得 '+earned+'｜已分配 '+spent+'</small></div>'+a8BuffHtml()+
+      '<div class="a972-stat-list">'+rows+'<hr>'+extras.map(x=>a972StatLine(x[0],x[1])).join('')+'</div>';
+  };
+
+  const _a9885BindBase=bindDrawer;
+  bindDrawer=function(root){
+    _a9885BindBase(root);if(!root)return;
+    root.querySelectorAll('[data-a9885-stat]').forEach(b=>b.onclick=()=>a9885Allocate(String(b.dataset.a9885Stat||'')));
+  };
+
+  // 回憶蠟燭現在有真正的等級能力點，因此一併重置並全數退回成「未分配能力點」。
+  const _a9885UseItemBase=a8UseItem;
+  a8UseItem=function(id){
+    const d=a8Item(id);
+    if(d?.eff==='reset'){
+      a9885EnsureState();
+      const lvPts=a9885Earned(),usedPanacea=Math.max(0,Number(state.panaceaUsed||0));
+      if(!confirm('使用回憶蠟燭？\n\n會把能力值回到創角時數值，Lv.50 起取得的 '+lvPts+' 點能力點會全部退回成未分配點數；已使用的萬能藥會退還成「純白的萬能藥」。等級、裝備、背包與名稱不變。'))return false;
+      if(!a8Take(id,1))return false;
+      state.player.stats={...state.creationStats};state.panaceaUsed=0;a9885RefundLevelStats();
+      if(usedPanacea&&a8Item('panacea_white'))a8Add('panacea_white',usedPanacea);
+      derive();state.player.hp=state.player.maxHp;state.player.mp=state.player.maxMp;
+      log('回憶蠟燭完成重置｜退回可分配能力點 '+a9885Unspent()+(usedPanacea?'｜純白的萬能藥 ×'+usedPanacea:''),'gain');save();render();return true;
+    }
+    return _a9885UseItemBase.apply(this,arguments);
+  };
+
+  // 舊存檔只需建追蹤欄位，不改既有 stats；可分配點數會依目前等級自動補齊。
+  const _a9885RenderBase=render;
+  render=function(){if(state)a9885EnsureState();const r=_a9885RenderBase.apply(this,arguments);a9885ApplyVersion();return r};
+  const _a9885InitBase=init;
+  init=function(){const r=_a9885InitBase.apply(this,arguments);if(state){a9885EnsureState();save()}setTimeout(a9885ApplyVersion,0);return r};
+
+  function a9885InstallStyle(){
+    if(document.getElementById('a9885-style'))return;
+    const st=document.createElement('style');st.id='a9885-style';st.textContent=`
+.a9885-point-box{margin:0 0 7px;padding:8px 9px;border:1px solid #5b4828;border-radius:6px;background:#151008}.a9885-point-box.ready{border-color:#aa8130;background:linear-gradient(180deg,#2b1e0c,#151008);box-shadow:inset 0 0 0 1px rgba(245,196,81,.08)}.a9885-point-box>div{display:flex;align-items:center;justify-content:space-between;gap:8px}.a9885-point-box b{font-size:11px;color:#dac596}.a9885-point-box strong{font-size:18px;color:#ffd85f}.a9885-point-box small{display:block;margin-top:2px;color:#8f8067;font-size:9px;line-height:1.45}.a9885-stat{align-items:center!important}.a9885-stat-ctl{display:flex;align-items:center;gap:5px}.a9885-stat-ctl>b{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05;min-width:31px}.a9885-stat-ctl>b small{font-size:7px;color:#8e8066;font-weight:400;white-space:nowrap}.a9885-stat-ctl button{width:25px;height:24px;border:1px solid #8a6d2e;border-radius:4px;background:linear-gradient(#5a441d,#2a1d0b);color:#ffe27a;font-weight:900;cursor:pointer;line-height:1}.a9885-stat-ctl button:disabled{opacity:.28;cursor:not-allowed;filter:grayscale(.7)}
+@media(max-width:900px){.a9885-point-box{padding:7px}.a9885-stat-ctl button{width:28px;height:27px;font-size:16px}.a9885-stat-ctl>b small{font-size:7px}}
+`;document.head.appendChild(st);
+  }
+  function a9885ApplyVersion(){
+    a9885InstallStyle();
+    document.title=A41_BRAND+' · '+A9885_BUILD;
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9885_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha98.85：修正 Lv.50 起每升 1 級應取得 1 點可分配能力點；舊角色依目前等級自動補發，並在能力頁直接配點。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha98.85｜Lv50後能力點補發與分配｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9885_BUILD+'</b><p>修正舊核心只有升級、沒有 Lv.50 起能力點資源的缺口：Lv.50=1 點、Lv.51=2 點、Lv.60=11 點；既有角色依目前等級自動補發。</p><p>「能力 → 屬性」可直接按 ＋ 分配；回憶蠟燭會把等級能力點全部退回成未分配點數，萬能藥仍照既有規則退還。</p><small>本版未新增媒體；GitHub Pages 只需替換 index.html。</small>';
+  }
+  function a9885Audit(){
+    const issues=[];if(!state?.player)return{ok:false,build:A9885_BUILD,issues:['沒有角色狀態']};
+    a9885EnsureState();const earned=a9885Earned(),spent=a9885Spent(),left=a9885Unspent();
+    if(earned!==Math.max(0,Number(state.player.lv||0)-49))issues.push('應得能力點公式錯誤');
+    if(left!==Math.max(0,earned-spent))issues.push('剩餘能力點計算錯誤');
+    if(A9885_STAT_KEYS.some(k=>!Number.isFinite(Number(state.player.stats?.[k]))))issues.push('角色基礎能力值異常');
+    return{ok:issues.length===0,build:A9885_BUILD,issues,lv:state.player.lv,earned,spent,left,alloc:{...state.a9885.alloc},stats:{...state.player.stats}};
+  }
+  async function a9885Probe(){
+    const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const rows=[],bad=[],add=(name,ok,detail={})=>{rows.push({name,ok:!!ok,detail});if(!ok)bad.push({name,detail})};
+    try{
+      for(const [lv,want] of [[49,0],[50,1],[51,2],[60,11]]){a76TestReset('knight',1);state.player.lv=lv;derive();delete state.a9885;a9885EnsureState();add('Lv'+lv+' 應得能力點 '+want,a9885Unspent()===want,{got:a9885Unspent(),earned:a9885Earned()})}
+      a76TestReset('knight',1);state.player.lv=49;state.player.exp=0;derive();delete state.a9885;a9885EnsureState();state.player.exp=expNeed(49);levelCheck();add('49→50 升級即取得1點',state.player.lv===50&&a9885Unspent()===1,{lv:state.player.lv,left:a9885Unspent()});
+      const b=Number(state.player.stats.str||0);a9885Allocate('str');add('能力點可分配到STR',Number(state.player.stats.str)===b+1&&a9885Unspent()===0&&Number(state.a9885.alloc.str)===1,{before:b,after:state.player.stats.str,left:a9885Unspent()});
+      // 模擬既有 Lv60 存檔：沒有 Alpha98.85 追蹤欄位時不得改原 stats，只補 11 點。
+      a76TestReset('elf',1);state.player.lv=60;derive();state.player.stats.dex=23;const keep=state.player.stats.dex;delete state.a9885;a9885EnsureState();add('舊Lv60存檔補11點且不改原能力',a9885Unspent()===11&&state.player.stats.dex===keep,{left:a9885Unspent(),dex:state.player.stats.dex});
+      A972_CHAR_TAB='attr';const html=a972CharacterHtml('attr');add('能力頁顯示點數與六個加點鍵',html.includes('可分配能力點')&&(html.match(/data-a9885-stat=/g)||[]).length===6,{buttons:(html.match(/data-a9885-stat=/g)||[]).length});
+      // 分配後 JSON round-trip 確認追蹤資料可存檔。
+      a9885Allocate('dex');const rt=JSON.parse(JSON.stringify(state));add('能力點追蹤可JSON持久化',Number(rt.a9885?.alloc?.dex||0)===1&&Number(rt.player?.stats?.dex||0)===keep+1,{alloc:rt.a9885?.alloc,dex:rt.player?.stats?.dex});
+    }catch(e){bad.push({name:'probe exception',detail:String(e?.stack||e)})}
+    finally{
+      try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push({name:'restore',detail:String(e?.stack||e)})}
+      a9885ApplyVersion();
+    }
+    return{ok:bad.length===0,build:A9885_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows,bad};
+  }
+  async function a9885FullRegression(){
+    let base={ok:true,skipped:true};try{if(window.__A9884_TEST__?.fullRegression)base=await window.__A9884_TEST__.fullRegression()}catch(e){base={ok:false,error:String(e)}}
+    const stats=await a9885Probe();a9885ApplyVersion();return{ok:base?.ok!==false&&stats.ok,build:A9885_BUILD,base,stats};
+  }
+  a9885InstallStyle();if(state)a9885EnsureState();a9885ApplyVersion();
+  window.__A9885_TEST__={build:A9885_BUILD,earned:a9885Earned,spent:a9885Spent,left:a9885Unspent,allocate:a9885Allocate,audit:a9885Audit,probe:a9885Probe,fullRegression:a9885FullRegression,applyVersion:a9885ApplyVersion,previous:window.__A9884_TEST__};
+})();
+
 })();
 </script>
 
