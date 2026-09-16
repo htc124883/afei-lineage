@@ -29623,6 +29623,219 @@ async function a9888FullRegression(){
 window.__A9888_TEST__={build:A9888_BUILD,regenEnabled:()=>A9888_BOSS_REGEN_ENABLED,audit:a9888Audit,fullRegression:a9888FullRegression,previous:window.__A9887_TEST__};
 
 
+
+
+// ===== Alpha99.0：正式線上化前總體檢基線 =====
+// 既有內容修正：
+// 1) 恢復使用者既定規則「交易所入口移除」；後期 Alpha98.58 UI normalizer 曾誤把交易所重新加回。
+// 2) 統一版本顯示，避免 Alpha98.88 內容仍顯示 Alpha98.87。
+// 注意：不變更戰鬥、數值、NPC、掉落、製作、BOSS 原始資料與存檔 schema。
+const A9900_BUILD='B1.0 Alpha99.0';
+(function(){
+  const css=`
+@media(max-width:900px){#mobile-nav{grid-template-columns:repeat(5,minmax(0,1fr))!important}}
+`;
+  function ensureStyle(){
+    let st=document.getElementById('a9900-style');
+    if(!st){st=document.createElement('style');st.id='a9900-style';document.head.appendChild(st)}
+    st.textContent=css;return st;
+  }
+  function removeTradeEntry(){
+    document.querySelectorAll('[data-drawer="trade"]').forEach(el=>el.remove());
+    try{if(typeof drawer!=='undefined'&&drawer==='trade')drawer='hunt'}catch(e){}
+    return !document.querySelector('[data-drawer="trade"]');
+  }
+  function applyVersion(){
+    ensureStyle();removeTradeEntry();
+    try{document.title=A41_BRAND+' · '+A9900_BUILD}catch(e){document.title='樓梯口天堂 · '+A9900_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9900_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.0：正式線上化前總體檢基線；修正交易所入口回歸與版本顯示不同步。BOSS 回血測試仍暫停。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.0｜線上化前總體檢｜交易所維持移除｜BOSS回血測試暫停｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9900_BUILD+'</b><p>正式線上化前總體檢第一階段：修正後期介面 normalizer 誤把已移除的交易所入口重新加入；桌面與手機皆維持移除。</p><p>同時修正 Alpha98.88 實際內容與畫面版本號不同步。</p><small>本版不改戰鬥、數值、NPC、掉落、製作、技能、存檔 schema；BOSS 回血測試總開關仍維持關閉。</small>';
+  }
+  function normalize(){ensureStyle();removeTradeEntry();return true}
+  const renderBase=render;render=function(){const r=renderBase.apply(this,arguments);try{normalize();applyVersion()}catch(e){console.error('Alpha99.0 render',e)}return r};
+  const drawBase=renderDrawers;renderDrawers=function(){const r=drawBase.apply(this,arguments);try{normalize()}catch(e){console.error('Alpha99.0 drawers',e)}return r};
+  const initBase=init;init=function(){const r=initBase.apply(this,arguments);try{normalize();applyVersion()}catch(e){console.error('Alpha99.0 init',e)}return r};
+  function audit(){
+    const issues=[];try{
+      normalize();applyVersion();
+      const trades=[...document.querySelectorAll('[data-drawer="trade"]')];if(trades.length)issues.push('交易所入口仍存在 '+trades.length+' 個');
+      const desktop=[...document.querySelectorAll('#right .navgrid>.navbtn')].map(x=>x.dataset.drawer);
+      const want=['hunt','inventory','status','chat','settings'];
+      if(desktop.join('|')!==want.join('|'))issues.push('桌面主選單不是五鍵：'+desktop.join('|'));
+      const mobile=[...document.querySelectorAll('#mobile-nav>.mnav')].map(x=>x.dataset.drawer);
+      if(mobile.join('|')!==want.join('|'))issues.push('手機主選單不是五鍵：'+mobile.join('|'));
+      if(document.title.indexOf(A9900_BUILD)<0)issues.push('document.title 未更新 Alpha99.0');
+      const v=document.querySelector('#a46-login-screen .a46-version');if(v&&v.textContent.trim()!==A9900_BUILD)issues.push('登入版本號不同步');
+      if(!window.__A9884_TEST__?.audit?.().ok)issues.push('Alpha98.84 原材料直製巡檢失敗');
+      if(!window.__A9887_TEST__?.audit?.().ok)issues.push('Alpha98.87 戰鬥日誌怪物連結巡檢失敗');
+      const regen=typeof window.__A9888_TEST__?.regenEnabled==='function'?window.__A9888_TEST__.regenEnabled():window.__A9888_TEST__?.regenEnabled;if(regen!==false)issues.push('BOSS 回血測試開關不是關閉狀態');
+    }catch(e){issues.push('Alpha99.0 巡檢例外：'+String(e?.stack||e))}
+    return{ok:issues.length===0,build:A9900_BUILD,issues,tradeRemoved:!document.querySelector('[data-drawer="trade"]'),desktopNav:[...document.querySelectorAll('#right .navgrid>.navbtn')].map(x=>x.dataset.drawer),mobileNav:[...document.querySelectorAll('#mobile-nav>.mnav')].map(x=>x.dataset.drawer),bossRegenEnabled:(typeof window.__A9888_TEST__?.regenEnabled==='function'?window.__A9888_TEST__.regenEnabled():window.__A9888_TEST__?.regenEnabled)};
+  }
+  async function fullRegression(){
+    let previous={ok:false,error:'not-run'};
+    try{previous=await window.__A9888_TEST__.fullRegression()}catch(e){previous={ok:false,error:String(e?.stack||e)}}
+    normalize();applyVersion();const own=audit();
+    let logClick={ok:false,error:'not-run'};try{logClick=await window.__A9887_TEST__.clickAudit()}catch(e){logClick={ok:false,error:String(e?.stack||e)}}
+    normalize();applyVersion();
+    return{ok:previous?.ok===true&&own.ok&&logClick?.ok===true,build:A9900_BUILD,previous,own,logClick};
+  }
+  window.__A9900_TEST__={build:A9900_BUILD,normalize,applyVersion,audit,fullRegression,previous:window.__A9888_TEST__};
+  normalize();applyVersion();
+})();
+
+
+// ===== Alpha99.1：Lv.50 起能力點回歸修正 =====
+// 回歸根因：Alpha98.87 戰鬥日誌修正曾從 Alpha98.84 穩定基底重建，
+// 因而漏帶 Alpha98.85 已完成的「Lv50 起每級 +1 可分配能力點」補丁。
+// 本版只恢復該既有規則與能力頁操作，不改戰鬥、NPC、掉落、製作、BOSS 或存檔 schema。
+const A9901_BUILD='B1.0 Alpha99.1';
+(function(){
+  const KEYS=['str','dex','con','int','wis','cha'];
+  const NAMES={str:'力量 (STR)',dex:'敏捷 (DEX)',con:'體質 (CON)',int:'智力 (INT)',wis:'精神 (WIS)',cha:'魅力 (CHA)'};
+  const earnedAt=lv=>Math.max(0,Math.floor(Number(lv||0))-49);
+  function ensure(){
+    if(!state?.player)return null;
+    if(!state.a9885||typeof state.a9885!=='object')state.a9885={};
+    if(!state.a9885.alloc||typeof state.a9885.alloc!=='object')state.a9885.alloc={};
+    for(const k of KEYS)state.a9885.alloc[k]=Math.max(0,Math.floor(Number(state.a9885.alloc[k]||0)));
+    state.a9885.rule='lv50-plus-one-per-level';
+    state.a9885.migrated=true;
+    state.a9885.restoredBy='Alpha99.1';
+    return state.a9885;
+  }
+  function spent(){ensure();return KEYS.reduce((n,k)=>n+Math.max(0,Number(state?.a9885?.alloc?.[k]||0)),0)}
+  function earned(){return earnedAt(state?.player?.lv||0)}
+  function left(){return Math.max(0,earned()-spent())}
+  function allocate(k){
+    if(!KEYS.includes(k)||!state?.player)return false;
+    ensure();
+    if(left()<1){toast('目前沒有可分配的能力點');return false}
+    state.player.stats=state.player.stats||{};
+    state.player.stats[k]=Number(state.player.stats[k]||0)+1;
+    state.a9885.alloc[k]=Number(state.a9885.alloc[k]||0)+1;
+    derive();save();
+    log('能力點分配：'+NAMES[k]+' +1｜剩餘 '+left()+' 點','gain');
+    try{renderDrawers()}catch(e){try{render()}catch(_e){}}
+    return true;
+  }
+  function refund(){ensure();state.a9885.alloc=Object.fromEntries(KEYS.map(k=>[k,0]));return left()}
+
+  // 49→50 會得到第 1 點；50→51 再得 1 點；之後每級同樣 +1。
+  const levelBase=levelCheck;
+  levelCheck=function(){
+    const before=earnedAt(state?.player?.lv||0),r=levelBase.apply(this,arguments),after=earnedAt(state?.player?.lv||0),gain=Math.max(0,after-before);
+    if(gain>0){ensure();log('獲得可分配能力點 +'+gain+'｜目前剩餘 '+left()+' 點','lv');try{toast('獲得能力點 +'+gain)}catch(e){}}
+    return r;
+  };
+
+  // 恢復能力頁「可分配能力點」與六能力 + 按鈕。
+  a972AttrHtml=function(){
+    a8EnsureState();ensure();
+    const p=state.player,s=p.effectiveStats||a8EffectiveStats(),e=state.element||'',remain=left(),total=earned(),used=spent();
+    const rows=KEYS.map(k=>{
+      const effective=Number(s[k]||0),base=Number(p.stats?.[k]||0),bonus=effective-base;
+      return '<div class="a972-stat a9901-stat '+k+'"><span>'+escapeHtml(NAMES[k])+'</span><div class="a9901-stat-ctl"><b>'+effective+(bonus?'<small>基礎 '+base+'</small>':'')+'</b><button type="button" data-a9901-stat="'+k+'" '+(remain>0?'':'disabled')+' aria-label="'+escapeHtml(NAMES[k])+'增加1點">＋</button></div></div>';
+    }).join('');
+    const has=k=>p[k]!==undefined&&p[k]!==null&&Number.isFinite(Number(p[k])),signed=k=>has(k)?((Number(p[k])>0?'+':'')+Number(p[k])):'—',pct=k=>has(k)?(Number(p[k])+'%'):'—';
+    const extras=[
+      ['攻擊',has('atk')?String(Number(p.atk)):'—'],['額外命中',signed('hitBonus')],['魔法傷害',signed('magicDmg')],['MP恢復加成',signed('mpRegenBonus')],
+      ['迴避率 (ER)',pct('er')],['傷害減免 (DR)',has('dr')?String(Number(p.dr)):'—'],['近距離爆擊率',has('sherineMeleeCrit')?(Number(p.sherineMeleeCrit)+'%'):'—'],
+      ['遠距離爆擊率',has('sherineRangedCrit')?(Number(p.sherineRangedCrit)+'%'):'—'],['魔法爆擊率',has('sherineMagicCrit')?(Number(p.sherineMagicCrit)+'%'):'—'],
+      ['HP恢復量','—'],['火屬性抗性','—'],['水屬性抗性','—'],['風屬性抗性','—'],['地屬性抗性','—'],
+      ['攻擊速度',(Number(typeof a8AttackInterval==='function'?a8AttackInterval():.8)).toFixed(2)+'s'],['萬能藥',(Number(state.panaceaUsed||0))+'/20'],['妖精屬性',e?({fire:'火',water:'水',wind:'風',earth:'地'}[e]||e):'無']
+    ];
+    return '<div class="a9901-point-box '+(remain>0?'ready':'')+'"><div><b>可分配能力點</b><strong>'+remain+'</strong></div><small>Lv.50 起每升 1 級獲得 1 點｜應得 '+total+'｜已分配 '+used+'</small></div>'+a8BuffHtml()+
+      '<div class="a972-stat-list">'+rows+'<hr>'+extras.map(x=>a972StatLine(x[0],x[1])).join('')+'</div>';
+  };
+
+  const bindBase=bindDrawer;
+  bindDrawer=function(root){
+    bindBase(root);if(!root)return;
+    root.querySelectorAll('[data-a9901-stat]').forEach(b=>b.onclick=()=>allocate(String(b.dataset.a9901Stat||'')));
+  };
+
+  // 保留既有回憶蠟燭規則，並恢復「等級能力點全部退回未分配」的部分。
+  const useBase=a8UseItem;
+  a8UseItem=function(id){
+    const d=a8Item(id);
+    if(d?.eff==='reset'){
+      ensure();
+      const lvPts=earned(),usedPanacea=Math.max(0,Number(state.panaceaUsed||0));
+      if(!confirm('使用回憶蠟燭？\n\n會把能力值回到創角時數值，Lv.50 起取得的 '+lvPts+' 點能力點會全部退回成未分配點數；已使用的萬能藥會退還成「純白的萬能藥」。等級、裝備、背包與名稱不變。'))return false;
+      if(!a8Take(id,1))return false;
+      state.player.stats={...state.creationStats};state.panaceaUsed=0;refund();
+      if(usedPanacea&&a8Item('panacea_white'))a8Add('panacea_white',usedPanacea);
+      derive();state.player.hp=state.player.maxHp;state.player.mp=state.player.maxMp;
+      log('回憶蠟燭完成重置｜退回可分配能力點 '+left()+(usedPanacea?'｜純白的萬能藥 ×'+usedPanacea:''),'gain');save();render();return true;
+    }
+    return useBase.apply(this,arguments);
+  };
+
+  function installStyle(){
+    if(document.getElementById('a9901-style'))return;
+    const st=document.createElement('style');st.id='a9901-style';st.textContent=`
+.a9901-point-box{margin:0 0 7px;padding:8px 9px;border:1px solid #5b4828;border-radius:6px;background:#151008}.a9901-point-box.ready{border-color:#aa8130;background:linear-gradient(180deg,#2b1e0c,#151008);box-shadow:inset 0 0 0 1px rgba(245,196,81,.08)}.a9901-point-box>div{display:flex;align-items:center;justify-content:space-between;gap:8px}.a9901-point-box b{font-size:11px;color:#dac596}.a9901-point-box strong{font-size:18px;color:#ffd85f}.a9901-point-box small{display:block;margin-top:2px;color:#8f8067;font-size:9px;line-height:1.45}.a9901-stat{align-items:center!important}.a9901-stat-ctl{display:flex;align-items:center;gap:5px}.a9901-stat-ctl>b{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05;min-width:31px}.a9901-stat-ctl>b small{font-size:7px;color:#8e8066;font-weight:400;white-space:nowrap}.a9901-stat-ctl button{width:25px;height:24px;border:1px solid #8a6d2e;border-radius:4px;background:linear-gradient(#5a441d,#2a1d0b);color:#ffe27a;font-weight:900;cursor:pointer;line-height:1}.a9901-stat-ctl button:disabled{opacity:.28;cursor:not-allowed;filter:grayscale(.7)}
+@media(max-width:900px){.a9901-point-box{padding:7px}.a9901-stat-ctl button{width:28px;height:27px;font-size:16px}.a9901-stat-ctl>b small{font-size:7px}}
+`;document.head.appendChild(st);
+  }
+  function applyVersion(){
+    installStyle();
+    try{document.title=A41_BRAND+' · '+A9901_BUILD}catch(e){document.title='樓梯口天堂 · '+A9901_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9901_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.1：恢復 Lv.50 起每升 1 級取得 1 點可分配能力點；舊角色依目前等級自動補發。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.1｜Lv50後能力點回歸修正｜線上化前總體檢｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9901_BUILD+'</b><p>回歸修正：恢復 Lv.50 起每級 +1 可分配能力點。Lv.50=1 點、Lv.51=2 點、Lv.60=11 點；既有角色依目前等級自動補發。</p><p>能力 → 屬性可直接按 ＋ 分配；回憶蠟燭會退回全部等級能力點。</p><small>此次只恢復既有能力點功能；戰鬥、NPC、掉落、製作、BOSS 原始資料與存檔 schema 不變。</small>';
+  }
+
+  const renderBase=render;
+  render=function(){if(state)ensure();const r=renderBase.apply(this,arguments);applyVersion();return r};
+  const initBase=init;
+  init=function(){const r=initBase.apply(this,arguments);if(state){ensure();save()}setTimeout(applyVersion,0);return r};
+
+  function audit(){
+    const issues=[];if(!state?.player)return{ok:false,build:A9901_BUILD,issues:['沒有角色狀態']};
+    ensure();const e=earned(),s=spent(),l=left();
+    if(e!==Math.max(0,Math.floor(Number(state.player.lv||0))-49))issues.push('應得能力點公式錯誤');
+    if(l!==Math.max(0,e-s))issues.push('剩餘能力點計算錯誤');
+    if(KEYS.some(k=>!Number.isFinite(Number(state.player.stats?.[k]))))issues.push('角色基礎能力值異常');
+    return{ok:issues.length===0,build:A9901_BUILD,issues,lv:state.player.lv,earned:e,spent:s,left:l,alloc:{...state.a9885.alloc},stats:{...state.player.stats}};
+  }
+  async function probe(){
+    const storage=a76StorageSnapshot(),snap=state?a74Clone(state):null,active=a46ActiveSlot,pending=a46PendingSlot,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const rows=[],bad=[],add=(name,ok,detail={})=>{rows.push({name,ok:!!ok,detail});if(!ok)bad.push({name,detail})};
+    try{
+      for(const [lv,want] of [[49,0],[50,1],[51,2],[60,11]]){a76TestReset('knight',1);state.player.lv=lv;derive();delete state.a9885;ensure();add('Lv'+lv+' 應得能力點 '+want,left()===want,{got:left(),earned:earned()})}
+      a76TestReset('knight',1);state.player.lv=49;state.player.exp=expNeed(49);derive();delete state.a9885;ensure();levelCheck();add('49→50 取得第1點',state.player.lv===50&&left()===1,{lv:state.player.lv,left:left()});
+      const b50=Number(state.player.stats.str||0);allocate('str');add('Lv50 能力點可分配',Number(state.player.stats.str)===b50+1&&left()===0&&Number(state.a9885.alloc.str)===1,{before:b50,after:state.player.stats.str,left:left()});
+      state.player.exp=expNeed(50);levelCheck();add('50→51 再取得1點',state.player.lv===51&&left()===1&&earned()===2&&spent()===1,{lv:state.player.lv,left:left(),earned:earned(),spent:spent()});
+      state.player.exp=expNeed(51)+expNeed(52);levelCheck();add('連續升級逐級累加',state.player.lv===53&&left()===3&&earned()===4&&spent()===1,{lv:state.player.lv,left:left(),earned:earned(),spent:spent()});
+      a76TestReset('elf',1);state.player.lv=60;derive();state.player.stats.dex=23;const keep=state.player.stats.dex;delete state.a9885;ensure();add('舊Lv60存檔補11點且不改原能力',left()===11&&state.player.stats.dex===keep,{left:left(),dex:state.player.stats.dex});
+      A972_CHAR_TAB='attr';const html=a972CharacterHtml('attr');add('能力頁有點數與六個加點鍵',html.includes('可分配能力點')&&(html.match(/data-a9901-stat=/g)||[]).length===6,{buttons:(html.match(/data-a9901-stat=/g)||[]).length});
+      allocate('dex');const rt=JSON.parse(JSON.stringify(state));add('配點追蹤可存檔',Number(rt.a9885?.alloc?.dex||0)===1&&Number(rt.player?.stats?.dex||0)===keep+1,{alloc:rt.a9885?.alloc,dex:rt.player?.stats?.dex});
+      const baseAudit=window.__A9900_TEST__?.audit?.();add('Alpha99.0 基線功能仍通過',baseAudit?.ok===true,{issues:baseAudit?.issues||[]});
+      const regen=typeof window.__A9888_TEST__?.regenEnabled==='function'?window.__A9888_TEST__.regenEnabled():null;add('BOSS 回血測試仍暫停',regen===false,{regen});
+    }catch(e){bad.push({name:'probe exception',detail:String(e?.stack||e)})}
+    finally{
+      try{a76StorageRestore(storage);a46ActiveSlot=active;a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push({name:'restore',detail:String(e?.stack||e)})}
+      applyVersion();
+    }
+    return{ok:bad.length===0,build:A9901_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows,bad};
+  }
+  async function fullRegression(){
+    let previous={ok:false,error:'not-run'};try{previous=await window.__A9900_TEST__.fullRegression()}catch(e){previous={ok:false,error:String(e?.stack||e)}}
+    const own=await probe();applyVersion();return{ok:previous?.ok===true&&own.ok,build:A9901_BUILD,previous,own};
+  }
+  installStyle();if(state)ensure();applyVersion();
+  window.__A9901_TEST__={build:A9901_BUILD,earned,left,spent,allocate,audit,probe,fullRegression,applyVersion,previous:window.__A9900_TEST__};
+})();
+
 })();
 </script>
 
