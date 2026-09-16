@@ -28131,9 +28131,11 @@ const A9878_BUILD='B1.0 Alpha98.78';
   }
   function a9878RollRegionDrops(mapId,rng=Math.random){
     const got=[];
-    for(const [id,pct] of a9878RegionRows(mapId)){
+    const worldTree=!!(state?.player?.cls==='elf'&&Array.isArray(state?.learnedSkills)&&state.learnedSkills.includes('sk_elf_worldtree'));
+    for(const [id,pct0] of a9878RegionRows(mapId)){
+      const pct=worldTree&&['new_item_164','new_item_195','new_item_165'].includes(id)&&Number(pct0)===20?30:Number(pct0||0);
       const x=Number(rng());
-      if(Number.isFinite(x)&&x*100<Number(pct))got.push(id);
+      if(Number.isFinite(x)&&x*100<pct)got.push(id);
     }
     return got;
   }
@@ -28210,11 +28212,12 @@ const A9878_BUILD='B1.0 Alpha98.78';
     }
     if(pollution.length)issues.push('地區掉落被誤塞進怪物表：'+pollution.join('、'));
     const mapId=rows.find(r=>r.name==='妖精森林周邊')?.mapIds?.[0]||'zone_01';
+    const wt=!!(state?.player?.cls==='elf'&&Array.isArray(state?.learnedSkills)&&state.learnedSkills.includes('sk_elf_worldtree'));
     const hit=a9878RollRegionDrops(mapId,()=>0.10),miss=a9878RollRegionDrops(mapId,()=>0.20),outside=a9878RollRegionDrops('training',()=>0);
     if(hit.length!==3)issues.push('地區掉落 10% deterministic probe 應三項全中');
-    if(miss.length!==0)issues.push('地區掉落 20% 邊界 deterministic probe 應全不掉');
+    if(wt?miss.length!==3:miss.length!==0)issues.push(wt?'世界樹啟用時 20% 固定亂數應落在提高後30%內':'地區掉落 20% 邊界 deterministic probe 應全不掉');
     if(outside.length!==0)issues.push('非指定地區不應有地區掉落');
-    return{ok:issues.length===0,issues,rows,probe:{hit,miss,outside}};
+    return{ok:issues.length===0,issues,rows,probe:{hit,miss,outside,worldTree:wt}};
   }
   function a9878DropAudit(){
     a9878ApplySourceData();
@@ -31641,6 +31644,484 @@ const A9916_BUILD='B1.0 Alpha99.16';
   const a9916RenderBase=render;render=function(){const r=a9916RenderBase.apply(this,arguments);a9916ApplyVersion();return r};
   a9916ApplyVersion();
   window.__A9916_TEST__={build:A9916_BUILD,open:a9916Open,close:a9916Close,prepareUi:a9916PrepareUiTest,probe:a9916Probe,regression:a9916Regression,applyDraft:a9916ApplyDraft,sanitize:a9916SanitizeDraft,remaining:a9916Remain,applyVersion:a9916ApplyVersion,previous:window.__A9915_TEST__};
+})();
+
+
+// ===== Alpha99.17：全技能／法術實效總檢 + 明確失效特殊技能修正 =====
+const A9917_BUILD='B1.0 Alpha99.17';
+(()=>{
+  // 本版只修「DATA 已明確宣告用途、但執行層完全沒有接上」的技能。
+  // 不自行猜測沒有數值/規則來源的舊技能效果（例如部分純計時 Buff），避免改壞平衡。
+  const A9917_FIXED_IDS=new Set([
+    'sk_elf_triple','sk_shock_stun','sk_dark_crit','sk_undead_bane','sk_elf_release',
+    'sk_blizzard_storm','sk_fire_prison'
+  ]);
+
+  function a9917PhysicalBase(mult=1,forceCrit=false){
+    const atk=Math.max(1,Number(state?.player?.atk||1));
+    const spread=Math.max(2,atk*.45),base=atk+Math.floor(Math.random()*spread);
+    const crit=forceCrit||Math.random()<.08;
+    return Math.max(1,Math.floor(base*(crit?1.65:1)*Math.max(.01,Number(mult||1))));
+  }
+  function a9917DealPhysical(i,dmg,label){
+    const x=state?.mobs?.[i],m=mobData(x);if(!x||x.dead||!m)return 0;
+    // 用現行最終傷害入口，保留席琳套裝最終乘區、死亡與畫面傷害回饋。
+    if(typeof a17Deal==='function')return a17Deal(x,dmg,label||'【技能】');
+    dmg=Math.max(1,Math.floor(Number(dmg)||1));x.hp=Math.max(0,x.hp-dmg);setClip(x,'hurt');x.hitFlash=.2;floatDamage(i,dmg,false,false);playMobHurt(m.n);if(x.hp<=0)killMob(i);return dmg;
+  }
+  function a9917EligibleInstakill(m,sk){
+    const tag=String(sk?.instakill?.tag||'');
+    if(tag==='undead')return !!m?.un;
+    if(tag==='element')return !!m?.elem;
+    return String(m?.tag||m?.kind||'').includes(tag||'__none__');
+  }
+
+  // 最終傷害入口修正：舊 Alpha12 覆寫 a11DamageOne 時遺失了 instakill，且 physical 特殊欄位從未被處理。
+  const a9917DamageBase=a11DamageOne;
+  a11DamageOne=function(i,sk){
+    const x=state?.mobs?.[i],m=mobData(x);if(!x||x.dead||!m)return 0;
+    if(sk?.instakill){
+      a12Wake(x,m);
+      if(!a9917EligibleInstakill(m,sk))return 0;
+      const dmg=Math.max(1,Number(x.hp||1));
+      x.hp=0;setClip(x,'hurt');x.hitFlash=.2;floatDamage(i,dmg,false,false);playMobHurt(m.n);killMob(i);return dmg;
+    }
+    if(sk?.hits&&sk?.dmgType==='physical'){
+      a12Wake(x,m);let total=0,hits=Math.max(1,Math.floor(Number(sk.hits||1)));
+      for(let h=0;h<hits;h++){
+        if(!state.mobs?.[i]||state.mobs[i].dead||state.mobs[i].hp<=0)break;
+        if(sk.ranged){const ar=a12ConsumeArrow();if(!ar){if(h===0)log(sk.n+'：沒有箭矢，技能未造成傷害。','bad');break}}
+        total+=a9917DealPhysical(i,a9917PhysicalBase(1,false),'【'+sk.n+' '+(h+1)+'/'+hits+'】');
+      }
+      return total;
+    }
+    if(sk?.stun&&sk?.dmgType==='physical'){
+      a12Wake(x,m);const dmg=a9917DealPhysical(i,a9917PhysicalBase(1,false),'【'+sk.n+'】');
+      const cur=state?.mobs?.[i];if(cur&&!cur.dead&&cur.hp>0)a12ApplyStatus(cur,mobData(cur),{kind:'stun',dur:3},sk.n);
+      return dmg;
+    }
+    if(sk?.darkCrit&&sk?.dmgType==='physical'){
+      a12Wake(x,m);return a9917DealPhysical(i,a9917PhysicalBase(1,true),'【'+sk.n+'】');
+    }
+    return a9917DamageBase.apply(this,arguments);
+  };
+
+  // 三重矢在扣 MP 前先確認至少能取得箭，避免「沒箭仍白扣 MP」。
+  const a9917CastBase=a11Cast;
+  a11Cast=function(id,auto=false){
+    if(id==='sk_elf_triple'){
+      const w=a8Item(state?.equipment?.wpn),have=a12ArrowIds().length>0,canBuy=!!state?.autoCombat?.autoBuyArrow&&Number(state?.player?.gold||0)>=200;
+      if(!w?.isBow)return a9917CastBase.apply(this,arguments); // 交給既有 gate 顯示原訊息
+      if(!have&&!canBuy){if(!auto)toast('三重矢需要箭矢');return false}
+    }
+    const r=a9917CastBase.apply(this,arguments),sk=DATA.skills?.[id];
+    if(r&&sk?.stormInterval){
+      state.a9917Storms=state.a9917Storms&&typeof state.a9917Storms==='object'?state.a9917Storms:{};
+      state.a9917Storms[id]={next:Date.now()+Math.max(100,Number(sk.stormInterval||10)*100)};
+      try{save()}catch(e){}
+    }
+    return r;
+  };
+
+  // 冰雪颶風 / 火牢：資料與技能書均已明確寫出週期傷害，但原執行層只有倒數計時，沒有任何傷害 tick。
+  function a9917StormTick(now=Date.now()){
+    if(!state)return 0;state.a9917Storms=state.a9917Storms&&typeof state.a9917Storms==='object'?state.a9917Storms:{};let total=0;
+    for(const [id,sk] of Object.entries(DATA.skills||{})){
+      if(!sk?.stormInterval)continue;
+      if(!a11SkillBuffActive(id)){delete state.a9917Storms[id];continue}
+      const q=state.a9917Storms[id]||(state.a9917Storms[id]={next:now+Math.max(100,Number(sk.stormInterval||10)*100)});
+      if(now<Number(q.next||0))continue;q.next=now+Math.max(100,Number(sk.stormInterval||10)*100);
+      for(let i=0;i<(state.mobs||[]).length;i++){
+        const x=state.mobs[i],m=mobData(x);if(!x||x.dead||x.hp<=0||!m)continue;
+        total+=Math.max(0,Number(a9917DamageBase(i,sk)||0));
+        const cur=state.mobs?.[i];if(cur&&!cur.dead&&cur.hp>0&&Number(sk.freezeHitOff||0))a12ApplyStatus(cur,mobData(cur),{kind:'freeze',hit:Number(sk.freezeHitOff||0),dur:6},sk.n);
+      }
+      log('【'+sk.n+'】週期效果發動。','gain');
+    }
+    if(total>0)try{save()}catch(e){}return total;
+  }
+  const a9917TickBase=tick;
+  tick=function(dt,now){const r=a9917TickBase.apply(this,arguments);try{a9917StormTick(Date.now())}catch(e){console.error('Alpha99.17 storm tick',e)}return r};
+
+  function a9917RuntimeRefs(id){
+    // 提供稽核用明確分類；不在遊戲執行時掃描原始碼。
+    const special={
+      sk_resurrection:'死亡狀態可消耗 MP 原地復活',
+      sk_dark_poison:'最新規則明確標記效果尚未開放'
+    };return special[id]||'';
+  }
+  function a9917Classify(id,sk){
+    if(A9917_FIXED_IDS.has(id))return{status:'fixed',note:'Alpha99.17 已接上實際執行效果'};
+    if(id==='sk_resurrection')return{status:'pass',note:a9917RuntimeRefs(id)};
+    if(id==='sk_dark_poison')return{status:'pending',note:a9917RuntimeRefs(id)};
+    if(['sk_antidote','sk_holy_light','sk_cancel'].includes(id))return{status:'review',note:'目前資料沒有玩家負面狀態目標；舊通用 heal 公式會額外回復 WIS/2 HP，並未真正解除對應狀態'};
+    if(sk?.type==='passive')return{status:'review',note:'學會後沒有找到可觀察的戰鬥／操作入口（返生術除外）'};
+    const specialFlags=['waterVital','attrFireBuff','loadFreeRegen','mirror','darkStealth','darkPoisonRes','darkBurn','darkWalkHaste','darkMagicDodge','darkDouble'];
+    const sf=specialFlags.filter(k=>sk?.[k]);
+    if(sf.length)return{status:'review',note:'只建立 Buff 倒數，特殊旗標尚未接入執行層：'+sf.join(', ')};
+    if(sk?.type==='buff'&&!sk.d&&!sk.haste&&!sk.summon&&id!=='sk_magic_shield')return{status:'review',note:'目前只建立 Buff 倒數；未偵測到額外數值／戰鬥行為'};
+    return{status:'pass',note:'已有可執行傷害／恢復／狀態／屬性／召喚／特殊流程'};
+  }
+  function a9917Audit(){
+    const rows=Object.entries(DATA.skills||{}).map(([id,sk])=>({id,name:sk.n,type:sk.type,...a9917Classify(id,sk)}));
+    const count=k=>rows.filter(x=>x.status===k).length;
+    return{ok:true,build:A9917_BUILD,total:rows.length,counts:{pass:count('pass'),fixed:count('fixed'),review:count('review'),pending:count('pending')},rows};
+  }
+
+  function a9917Probe(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const rows=[],bad=[],add=(name,ok,detail={})=>{rows.push({name,ok:!!ok,detail});if(!ok)bad.push(name)};const oldRand=Math.random;
+    try{
+      Math.random=()=>.999999;
+      // 三重矢：實際 3 hit、實際耗 3 箭、MP 照資料扣 15。
+      a76TestReset('elf',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.learnedSkills=['sk_elf_triple'];state.equipment.wpn='wpn_3';state.inventory.wpn_22=20;state.equipment.arrow='wpn_22';state.player.mp=state.player.maxMp;state.skillCooldown={};derive();state.mobs[0].hp=state.mobs[0].maxHp=99999;state.target=0;
+      let hp=state.mobs[0].hp,mp=state.player.mp,ar=a8Count('wpn_22'),r=a11Cast('sk_elf_triple');add('三重矢三段實傷',r&&hp-state.mobs[0].hp>0&&mp-state.player.mp===15&&ar-a8Count('wpn_22')===3,{damage:hp-state.mobs[0].hp,mp:mp-state.player.mp,arrows:ar-a8Count('wpn_22')});
+      // 衝擊之暈：物理傷害 + stun 狀態。
+      a76TestReset('knight',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.learnedSkills=['sk_shock_stun'];state.equipment.wpn=Object.keys(DATA.items).find(id=>DATA.items[id]?.type==='wpn'&&!DATA.items[id]?.isBow);state.player.mp=state.player.maxMp;state.skillCooldown={};derive();state.mobs[0].hp=state.mobs[0].maxHp=99999;state.target=0;hp=state.mobs[0].hp;r=a11Cast('sk_shock_stun');add('衝擊之暈傷害與暈眩',r&&hp-state.mobs[0].hp>0&&a12StatusOn(state.mobs[0],'stun'),{damage:hp-state.mobs[0].hp,status:state.mobs[0].a12Status});
+      // 會心一擊：不再 0 傷害。
+      a76TestReset('dark',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.learnedSkills=['sk_dark_crit'];state.skillCooldown={};derive();state.mobs[0].hp=state.mobs[0].maxHp=99999;state.target=0;hp=state.mobs[0].hp;r=a11Cast('sk_dark_crit');add('會心一擊實傷',r&&hp-state.mobs[0].hp>0,{damage:hp-state.mobs[0].hp});
+      // 即死類：改讀現行怪物資料 un / elem。
+      const uid=Object.keys(DATA.mobs).find(id=>DATA.mobs[id]?.un),eid=Object.keys(DATA.mobs).find(id=>DATA.mobs[id]?.elem);
+      a76TestReset('mage',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.learnedSkills=['sk_undead_bane'];state.player.mp=state.player.maxMp;state.skillCooldown={};state.mobs[0]={id:uid,hp:7777,maxHp:7777,clip:'idle',frame:0,ft:0,dead:false,respawnAt:0,hitFlash:0,nextAtk:999999};state.target=0;r=a11Cast('sk_undead_bane');add('起死回生術對不死系生效',r&&state.mobs[0].dead===true,{mob:uid,dead:state.mobs[0].dead});
+      a76TestReset('elf',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.learnedSkills=['sk_elf_release'];state.player.mp=state.player.maxMp;state.skillCooldown={};state.mobs[0]={id:eid,hp:7777,maxHp:7777,clip:'idle',frame:0,ft:0,dead:false,respawnAt:0,hitFlash:0,nextAtk:999999};state.target=0;r=a11Cast('sk_elf_release');add('釋放元素對元素系生效',r&&state.mobs[0].dead===true,{mob:eid,dead:state.mobs[0].dead});
+      // 兩種週期傷害：不等真實秒數，直接把 next 推到現在驗證一次 tick。
+      for(const id of ['sk_blizzard_storm','sk_fire_prison']){a76TestReset('mage',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.learnedSkills=[id];state.player.mp=state.player.maxMp;state.skillCooldown={};for(const x of state.mobs){x.hp=x.maxHp=99999}r=a11Cast(id);state.a9917Storms[id].next=0;const before=state.mobs.reduce((n,x)=>n+x.hp,0),d=a9917StormTick(Date.now()),after=state.mobs.reduce((n,x)=>n+x.hp,0);add(DATA.skills[id].n+'週期全體傷害',r&&d>0&&after<before,{damage:before-after});}
+      const audit=a9917Audit();add('技能資料全數納入稽核',audit.total===Object.keys(DATA.skills||{}).length&&audit.total===131,{counts:audit.counts,total:audit.total});
+    }catch(e){bad.push(String(e?.stack||e))}
+    finally{Math.random=oldRand;try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push('restore '+String(e))}a9917ApplyVersion()}
+    return{ok:bad.length===0,build:A9917_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows,bad};
+  }
+
+  function a9917ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9917_BUILD}catch(e){document.title='樓梯口天堂 · '+A9917_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9917_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.17：全 131 技能／法術實效稽核；修正三重矢等特殊攻擊與冰雪颶風／火牢週期傷害。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.17｜全技能法術實效總檢｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9917_BUILD+'</b><p>完成 131 個技能／法術的執行層稽核；修正三重矢、衝擊之暈、會心一擊、起死回生術、釋放元素，以及冰雪颶風／火牢週期傷害。</p><p>沒有明確數值或規則來源的舊技能不自行猜效果；已列入稽核報告，避免悄悄把「只有倒數」當成正常。</p>';
+  }
+  const a9917ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9917ShowLoginBase.apply(this,arguments);a9917ApplyVersion();return r};
+  const a9917ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9917ShowSlotsBase.apply(this,arguments);a9917ApplyVersion();return r};
+  const a9917OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9917OpenCreateBase.apply(this,arguments);a9917ApplyVersion();return r};
+  const a9917EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9917EnterSlotBase.apply(this,arguments);a9917ApplyVersion();return r};
+  const a9917RenderBase=render;render=function(){const r=a9917RenderBase.apply(this,arguments);a9917ApplyVersion();return r};
+  a9917ApplyVersion();
+  window.__A9917_TEST__={build:A9917_BUILD,audit:a9917Audit,probe:a9917Probe,stormTick:a9917StormTick,applyVersion:a9917ApplyVersion,previous:window.__A9916_TEST__};
+
+// ===== Alpha99.18：新阿肥技能實效對碼（第一批） =====
+// 來源：新阿肥玩家資料站 gen.js（2026-09-17 讀取）。
+// 原則：只接「來源已明確寫出、且目前單機核心能精準表達」的效果；
+// 日光術／世界樹／烈焰之魂／單屬性防禦等需要改動出生、掉落或元素魔法底層者，繼續留在 REVIEW，不猜近似值。
+const A9918_BUILD='B1.0 Alpha99.18';
+
+// 新阿肥已明確註記：寒冷戰慄／吸血鬼之吻只有魔法傷害、不吸血；冰矛圍籬只有傷害、不冰凍。
+if(DATA.skills?.sk_cold_shiver)DATA.skills.sk_cold_shiver.lifesteal=false;
+if(DATA.skills?.sk_vampire)DATA.skills.sk_vampire.lifesteal=false;
+if(DATA.skills?.sk_ice_lance)DATA.skills.sk_ice_lance.freeze=0;
+
+function a9918Buff(id){return !!(state&&a11SkillBuffActive(id))}
+
+// 靈魂昇華：最大 HP / MP 各 ×1.2。
+// 增幅防禦：DR + floor(等級 / 10)。
+const a9918DeriveBase=derive;
+derive=function(){
+  const r=a9918DeriveBase.apply(this,arguments);if(!state)return r;
+  if(a9918Buff('sk_soul_up')){
+    state.player.maxHp=Math.max(1,Math.floor(Number(state.player.maxHp||1)*1.2));
+    state.player.maxMp=Math.max(0,Math.floor(Number(state.player.maxMp||0)*1.2));
+    state.player.hp=Math.min(Number(state.player.hp||0),state.player.maxHp);
+    state.player.mp=Math.min(Number(state.player.mp||0),state.player.maxMp);
+  }
+  if(a9918Buff('sk_reduction_armor'))state.player.dr=Number(state.player.dr||0)+Math.floor(Number(state.player.lv||0)/10);
+  return r;
+};
+
+// 行走加速：攻擊間隔 ×0.85，可和既有加速術疊乘。
+const a9918IntervalBase=a8AttackInterval;
+a8AttackInterval=function(){
+  let v=Number(a9918IntervalBase.apply(this,arguments)||.72);
+  if(a9918Buff('sk_dark_walkhaste'))v*=.85;
+  return Math.max(.12,v);
+};
+
+// 暗隱術：下一次怪物物理攻擊 100% 迴避，觸發後消耗。
+// 暗影閃避：效果中每次怪物物理攻擊 20% 迴避，不消耗。
+// 聖結界：怪物物理傷害在既有 DR / 其他減傷後再 ×0.7。
+const a9918MobAttackBase=mobAttack;
+mobAttack=function(i){
+  if(!state)return a9918MobAttackBase.apply(this,arguments);
+  const x=state.mobs?.[i],m=mobData(x);
+  if(x&&!x.dead&&m&&state.running){
+    if(a9918Buff('sk_dark_stealth')){
+      delete state.skillBuffs.sk_dark_stealth;
+      try{playMobAttack(m.n)}catch(e){}
+      log('【暗隱術】迴避了 '+m.n+' 的下一次物理攻擊。','gain');
+      return false;
+    }
+    if(a9918Buff('sk_dark_dodge')&&Math.random()<.20){
+      try{playMobAttack(m.n)}catch(e){}
+      log('【暗影閃避】迴避了 '+m.n+' 的物理攻擊。','gain');
+      return false;
+    }
+    if(a9918Buff('sk_holy_barrier')){
+      const before=Number(state.player.hp||0),pad=1000000000,oldFloat=floatPlayer;
+      state.player.hp=before+pad;
+      try{floatPlayer=function(d){return oldFloat(Math.max(1,Math.floor(Number(d||0)*.7)))};a9918MobAttackBase.apply(this,arguments)}
+      finally{floatPlayer=oldFloat}
+      const raw=Math.max(0,before+pad-Number(state.player.hp||0)),dmg=Math.max(raw>0?1:0,Math.floor(raw*.7));
+      state.player.hp=Math.max(0,before-dmg);
+      if(state.player.hp<=0){try{a14Death()}catch(e){state.running=false}}
+      return true;
+    }
+  }
+  return a9918MobAttackBase.apply(this,arguments);
+};
+
+// 燃燒鬥志：普攻命中 30% 機率整段傷害 ×1.5（補上額外 50%）。
+// 雙重破壞：鋼爪／雙刀普攻命中 20% 機率傷害 ×2（補上一段同額傷害）。
+// 屬性之火：妖精、火屬性、近戰時，普攻命中 33% 機率整段傷害 ×1.5。
+function a9918Weapon(){try{return a8Item(state?.equipment?.wpn)||null}catch(e){return null}}
+function a9918MeleeWeapon(w){return !!w&&!w.isBow&&!w.ranged}
+function a9918DarkDoubleWeapon(w){const c=String(w?.wcat||'');return /鋼爪|雙刀/.test(c)}
+function a9918PostAttack(t,before,w){
+  if(!t||t.dead||Number(t.hp||0)<=0)return 0;
+  const dealt=Math.max(0,Number(before||0)-Number(t.hp||0));if(dealt<=0)return 0;
+  let bonus=0;
+  if(a9918Buff('sk_dark_burn')&&Math.random()<.30){const d=Math.max(1,Math.floor(dealt*.5));bonus+=d;a17Deal(t,d,'【燃燒鬥志】')}
+  if(!t.dead&&Number(t.hp||0)>0&&a9918Buff('sk_dark_double')&&a9918DarkDoubleWeapon(w)&&Math.random()<.20){const d=Math.max(1,dealt);bonus+=d;a17Deal(t,d,'【雙重破壞】')}
+  if(!t.dead&&Number(t.hp||0)>0&&state.player?.cls==='elf'&&state.element==='fire'&&a9918MeleeWeapon(w)&&a9918Buff('sk_elf_attrfire')&&Math.random()<.33){const d=Math.max(1,Math.floor(dealt*.5));bonus+=d;a17Deal(t,d,'【屬性之火】')}
+  return bonus;
+}
+const a9918AttackBase=attack;
+attack=function(){
+  let t=null,before=0,w=null;
+  if(state?.running){ensureMobs();let i=Number(state.target||0);t=state.mobs?.[i];if(!t||t.dead)t=state.mobs?.find(x=>x&&!x.dead)||null;if(t){before=Number(t.hp||0);w=a9918Weapon()}}
+  const r=a9918AttackBase.apply(this,arguments);
+  if(t&&before>Number(t.hp||0)&&!t.dead)try{a9918PostAttack(t,before,w)}catch(e){console.error('Alpha99.18 post attack',e)}
+  return r;
+};
+
+const A9918_SOURCE_CONFIRMED=new Set([
+  'sk_cold_shiver','sk_vampire','sk_ice_lance','sk_soul_up','sk_reduction_armor',
+  'sk_holy_barrier','sk_dark_stealth','sk_dark_dodge','sk_dark_walkhaste','sk_dark_burn',
+  'sk_dark_double','sk_elf_attrfire'
+]);
+const A9918_STILL_REVIEW=new Set(['sk_sunlight','sk_elf_worldtree','sk_elf_singleres','sk_elf_flamesoul','sk_dark_poisonres']);
+
+function a9918Audit(){
+  const issues=[];
+  if(DATA.skills?.sk_cold_shiver?.lifesteal)issues.push('寒冷戰慄仍會吸血');
+  if(DATA.skills?.sk_vampire?.lifesteal)issues.push('吸血鬼之吻仍會吸血');
+  if(Number(DATA.skills?.sk_ice_lance?.freeze||0)!==0)issues.push('冰矛圍籬仍會冰凍');
+  for(const id of A9918_SOURCE_CONFIRMED)if(!DATA.skills?.[id])issues.push('缺少技能 '+id);
+  return{ok:issues.length===0,build:A9918_BUILD,issues,confirmed:[...A9918_SOURCE_CONFIRMED],review:[...A9918_STILL_REVIEW]};
+}
+
+function a9918Probe(){
+  const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+  const rows=[],bad=[],add=(name,ok,detail={})=>{rows.push({name,ok:!!ok,detail});if(!ok)bad.push(name)},oldRand=Math.random;
+  try{
+    // 死欄位修正：兩招不吸血、冰矛不凍結。
+    for(const id of ['sk_cold_shiver','sk_vampire']){a76TestReset('mage',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.learnedSkills=[id];state.player.maxHp=9999;state.player.hp=100;state.player.mp=9999;state.skillCooldown={};state.mobs[0].hp=state.mobs[0].maxHp=99999;state.target=0;Math.random=()=>.5;const hp=state.player.hp,r=a11Cast(id);add(DATA.skills[id].n+'不再吸血',r&&state.player.hp===hp,{before:hp,after:state.player.hp})}
+    a76TestReset('mage',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.learnedSkills=['sk_ice_lance'];state.player.mp=9999;state.skillCooldown={};state.mobs[0].hp=state.mobs[0].maxHp=99999;state.target=0;Math.random=()=>.5;let r=a11Cast('sk_ice_lance');add('冰矛圍籬不再冰凍',r&&!a12StatusOn(state.mobs[0],'freeze'),{status:state.mobs[0].a12Status||{}});
+
+    // 靈魂昇華、增幅防禦。
+    a76TestReset('mage',80);state.skillBuffs={};derive();let hp0=state.player.maxHp,mp0=state.player.maxMp;state.skillBuffs.sk_soul_up=Date.now()+60000;derive();add('靈魂昇華 HP/MP ×1.2',state.player.maxHp===Math.floor(hp0*1.2)&&state.player.maxMp===Math.floor(mp0*1.2),{hp0,hp:state.player.maxHp,mp0,mp:state.player.maxMp});
+    a76TestReset('knight',80);state.skillBuffs={};derive();let dr0=Number(state.player.dr||0);state.skillBuffs.sk_reduction_armor=Date.now()+60000;derive();add('增幅防禦 DR + 等級÷10',Number(state.player.dr||0)===dr0+Math.floor(Number(state.player.lv||0)/10),{dr0,dr:state.player.dr,lv:state.player.lv});
+
+    // 行走加速。
+    a76TestReset('dark',80);state.skillBuffs={};derive();let iv0=a8AttackInterval();state.skillBuffs.sk_dark_walkhaste=Date.now()+60000;let iv1=a8AttackInterval();add('行走加速攻擊間隔 ×0.85',Math.abs(iv1-iv0*.85)<.000001,{base:iv0,active:iv1});
+
+    // 暗隱術 / 暗影閃避 / 聖結界。
+    a76TestReset('dark',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.player.hp=state.player.maxHp;state.skillBuffs={sk_dark_stealth:Date.now()+60000};Math.random=()=>.5;let before=state.player.hp;mobAttack(0);add('暗隱術迴避一次並消耗',state.player.hp===before&&!state.skillBuffs.sk_dark_stealth,{before,after:state.player.hp});
+    state.skillBuffs={sk_dark_dodge:Date.now()+60000};before=state.player.hp;Math.random=()=>.1;mobAttack(0);add('暗影閃避 20% 判定且不消耗',state.player.hp===before&&a9918Buff('sk_dark_dodge'),{before,after:state.player.hp});
+    a76TestReset('knight',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.mobs[0]={id:'blackelder',hp:99999,maxHp:99999,clip:'idle',frame:0,ft:0,dead:false,respawnAt:0,hitFlash:0,nextAtk:0};state.player.hp=state.player.maxHp=99999;state.skillBuffs={};Math.random=()=>.5;before=state.player.hp;mobAttack(0);let normal=before-state.player.hp;state.player.hp=before;state.skillBuffs={sk_holy_barrier:Date.now()+60000};mobAttack(0);let holy=before-state.player.hp;add('聖結界傷害 ×0.7',normal>5&&holy===Math.max(1,Math.floor(normal*.7)),{normal,holy});
+
+    // 三種普攻觸發：直接驗證實際 post-attack 路徑會額外扣血。
+    a76TestReset('dark',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.mobs[0].hp=state.mobs[0].maxHp=99999;state.skillBuffs={sk_dark_burn:Date.now()+60000};Math.random=()=>0;before=state.mobs[0].hp;let b=a9918PostAttack(state.mobs[0],before+100,a9918Weapon());add('燃燒鬥志 30% ×1.5 路徑',b===50,{bonus:b});
+    const claw=Object.keys(DATA.items).find(id=>/鋼爪|雙刀/.test(String(DATA.items[id]?.wcat||'')));state.equipment.wpn=claw;state.mobs[0].hp=99999;state.mobs[0].dead=false;state.skillBuffs={sk_dark_double:Date.now()+60000};before=state.mobs[0].hp;b=a9918PostAttack(state.mobs[0],before+100,a9918Weapon());add('雙重破壞鋼爪/雙刀 20% ×2 路徑',!!claw&&b===100,{weapon:claw,bonus:b});
+    a76TestReset('elf',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.element='fire';state.equipment.wpn=Object.keys(DATA.items).find(id=>DATA.items[id]?.type==='wpn'&&!DATA.items[id]?.isBow&&!DATA.items[id]?.ranged);state.mobs[0].hp=99999;state.mobs[0].dead=false;state.skillBuffs={sk_elf_attrfire:Date.now()+60000};Math.random=()=>0;before=state.mobs[0].hp;b=a9918PostAttack(state.mobs[0],before+100,a9918Weapon());add('屬性之火火屬近戰 33% ×1.5 路徑',b===50,{weapon:state.equipment.wpn,bonus:b});
+
+    const prev=window.__A9917_TEST__?.probe?.();add('Alpha99.17 特殊技能回歸',prev?.ok===true,{passed:prev?.passed,total:prev?.total,bad:prev?.bad});
+    const aud=a9918Audit();add('Alpha99.18 來源對碼稽核',aud.ok,aud);
+  }catch(e){bad.push(String(e?.stack||e))}
+  finally{Math.random=oldRand;try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push('restore '+String(e))}a9918ApplyVersion()}
+  return{ok:bad.length===0,build:A9918_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows,bad};
+}
+
+function a9918ApplyVersion(){
+  try{document.title=A41_BRAND+' · '+A9918_BUILD}catch(e){document.title='樓梯口天堂 · '+A9918_BUILD}
+  const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9918_BUILD;
+  const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.18：依新阿肥現行技能規則修正不吸血／不冰凍，並接上靈魂昇華、增幅防禦、聖結界與黑妖特殊增益。';
+  const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.18｜新阿肥技能實效對碼第一批｜PC＋手機';
+  try{a55InstallLoginVersionPanel()}catch(e){}
+  const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9918_BUILD+'</b><p>依新阿肥現行資料重新對碼：寒冷戰慄／吸血鬼之吻不再吸血、冰矛圍籬不再冰凍；靈魂昇華、增幅防禦、聖結界、暗隱術、暗影閃避、行走加速、燃燒鬥志、雙重破壞與屬性之火接上實際效果。</p><p>日光術、世界樹、烈焰之魂、單屬性防禦、毒性抵抗牽涉出生／掉落／元素魔法／武器骰／中毒底層，繼續標 REVIEW，不用近似值冒充。</p>';
+}
+const a9918ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9918ShowLoginBase.apply(this,arguments);a9918ApplyVersion();return r};
+const a9918ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9918ShowSlotsBase.apply(this,arguments);a9918ApplyVersion();return r};
+const a9918OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9918OpenCreateBase.apply(this,arguments);a9918ApplyVersion();return r};
+const a9918EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9918EnterSlotBase.apply(this,arguments);a9918ApplyVersion();return r};
+const a9918RenderBase=render;render=function(){const r=a9918RenderBase.apply(this,arguments);a9918ApplyVersion();return r};
+a9918ApplyVersion();
+window.__A9918_TEST__={build:A9918_BUILD,audit:a9918Audit,probe:a9918Probe,applyVersion:a9918ApplyVersion,review:[...A9918_STILL_REVIEW],previous:window.__A9917_TEST__};
+
+// ===== Alpha99.19：新阿肥技能實效對碼（第二批／五項底層補強） =====
+// 來源：新阿肥玩家資料站 gen.js 的現行技能註記。
+// 日光術、世界樹、烈焰之魂接入現行單機戰鬥／掉落底層；
+// 單屬性防禦、毒性抵抗完成可執行承傷核心。怪物魔法命中公式未由公開資料提供，因此不猜命中率。
+const A9919_BUILD='B1.0 Alpha99.19';
+const A9919_REGION_IDS=new Set(['new_item_164','new_item_195','new_item_165']);
+const A9919_ELES=new Set(['fire','water','earth','wind']);
+function a9919Learned(id){return !!(state&&Array.isArray(state.learnedSkills)&&state.learnedSkills.includes(id))}
+function a9919PerfNow(){try{if(typeof A45_SIM_NOW!=='undefined'&&Number(A45_SIM_NOW)>0)return Number(A45_SIM_NOW)}catch(e){}return performance.now()}
+function a9919EpochNow(){try{if(typeof A45_SIM_NOW!=='undefined'&&Number(A45_SIM_NOW)>0)return Number(A45_SIM_NOW)}catch(e){}return Date.now()}
+
+// 日光術：新阿肥為狩獵場出怪節奏快一倍。
+// B1 現行多怪核心本來就是 0.35~0.9 秒短刷新，因此保留單機節奏，只把現有剩餘刷新等待精準減半。
+function a9919SunlightOn(){return !!(state&&!state.inVillage&&a9918Buff('sk_sunlight'))}
+function a9919SunlightRespawn(x,now=a9919PerfNow()){
+  if(!x||!x.dead||!a9919SunlightOn())return 0;
+  const old=Number(x.respawnAt||0),left=Math.max(0,old-Number(now||0));
+  if(left<=0)return 0;
+  const next=Math.max(50,left*.5);x.respawnAt=Number(now||0)+next;return next;
+}
+const a9919KillBase=killMob;
+killMob=function(i){
+  const before=state?.mobs?.[i],alive=!!(before&&!before.dead&&Number(before.hp||0)>0);
+  const r=a9919KillBase.apply(this,arguments),x=state?.mobs?.[i];
+  if(alive&&x?.dead)try{a9919SunlightRespawn(x)}catch(e){try{console.warn('Alpha99.19 sunlight',e)}catch(_e){}}
+  return r;
+};
+
+// 世界樹：真正的 Alpha98.78 閉包地區掉落函式已在本版直接對碼：
+// 妖精學會世界樹後，四個指定地區的三種素材各 20%→30%，前景與離線 replay 共用同一條 killMob 路徑。
+try{
+  if(DATA?._meta?.a9878DropSource){
+    DATA._meta.a9878DropSource.regionRule='指定四區擊殺任意一般怪物後，三項各自獨立20%；妖精習得世界樹的呼喚後各提高為30%。';
+    DATA._meta.a9878DropSource.worldTree='sk_elf_worldtree';
+  }
+}catch(e){}
+
+// 修正既有 derive 的元素抗性重複累加：每次從裝備 + 現行技能 Buff + 魔女3件重新計算。
+// 單屬性防禦：所選妖精屬性 +50；抗性50＝同屬性怪物魔法傷害減半，100＝免疫。
+function a9919ResKey(e){return 'res'+String(e).charAt(0).toUpperCase()+String(e).slice(1)}
+function a9919ResTotals(){
+  const r={fire:0,water:0,earth:0,wind:0};
+  try{for(const d of a8EqData())for(const e of A9919_ELES)r[e]+=Number(d?.[a9919ResKey(e)]||0)}catch(e){}
+  try{for(const [,sk] of a11ActiveSkillBuffs()){const d=sk?.d||{};for(const e of A9919_ELES)r[e]+=Number(d?.[a9919ResKey(e)]||0)}}catch(e){}
+  try{if(typeof a18SetN==='function'&&a18SetN('魔女')>=3)r.water+=10}catch(e){}
+  if(state?.player?.cls==='elf'&&a9918Buff('sk_elf_singleres')&&A9919_ELES.has(String(state.element||'')))r[String(state.element)]+=50;
+  return r;
+}
+const a9919DeriveBase=derive;
+derive=function(){
+  const out=a9919DeriveBase.apply(this,arguments);if(!state)return out;
+  const r=a9919ResTotals();state.player.resFire=r.fire;state.player.resWater=r.water;state.player.resEarth=r.earth;state.player.resWind=r.wind;
+  return out;
+};
+function a9919ElementMagicDamage(raw,ele){
+  raw=Math.max(0,Number(raw)||0);ele=String(ele||'none');if(!A9919_ELES.has(ele)||!state)return Math.floor(raw);
+  const res=Math.max(0,Math.min(100,Number(state.player?.[a9919ResKey(ele)]||0)));
+  return Math.max(0,Math.floor(raw*(1-res/100)));
+}
+
+// 烈焰之魂：近戰武器骰固定取目標體型對應最大值，再只讓武器骰部分 ×1.2。
+// B1 原核心把武器骰折成 wpnPart=floor((dmgS+dmgL)/4) 併入 atk；以下只補正這一段，不乘 STR／等級／其他額傷。
+function a9919FlameSoulExtra(w,m){
+  if(!(state?.player?.cls==='elf'&&a9918Buff('sk_elf_flamesoul')&&w&&a9918MeleeWeapon(w)))return 0;
+  const base=Math.floor((Number(w.dmgS||0)+Number(w.dmgL||0))/4),large=String(m?.s||'S').toUpperCase()==='L';
+  const mx=large?Number(w.dmgL||w.dmgS||0):Number(w.dmgS||w.dmgL||0),desired=Math.floor(Math.max(0,mx)*1.2);
+  const mul=Math.max(1,Number(state.player?.enhancePhysicalMult||1));
+  return Math.max(0,Math.floor((desired-base)*mul));
+}
+const a9919PostAttackBase=a9918PostAttack;
+a9918PostAttack=function(t,before,w){
+  let flame=0;
+  try{if(t&&!t.dead&&Number(t.hp||0)>0){flame=a9919FlameSoulExtra(w,mobData(t));if(flame>0)a17Deal(t,flame,'【烈焰之魂】')}}catch(e){try{console.error('Alpha99.19 flame soul',e)}catch(_e){}}
+  return flame+a9919PostAttackBase(t,before,w);
+};
+
+// 毒性抵抗：建立玩家中毒的真實跳傷核心；技能啟用時每跳傷害減半。
+// 公開資料未提供怪物 pbase/minHit 的命中換算，故本版不猜「怪物施毒命中率」。
+function a9919ApplyPlayerPoison(spec={},source='毒素',now=a9919EpochNow()){
+  if(!state)return false;const d=Math.max(0,Number(spec.d||0)),tick=Math.max(.1,Number(spec.tick||1)),dur=Math.max(.1,Number(spec.dur||1));if(d<=0)return false;
+  state.a9919PlayerPoison={source:String(source||'毒素'),d,tick,dur,until:Number(now)+dur*1000,next:Number(now)+tick*1000};return true;
+}
+function a9919PoisonTick(now=a9919EpochNow()){
+  const p=state?.a9919PlayerPoison;if(!p)return 0;now=Number(now);if(now>=Number(p.until||0)){delete state.a9919PlayerPoison;return 0}
+  let total=0,guard=0;
+  while(now>=Number(p.next||0)&&Number(p.next||0)<Number(p.until||0)&&guard++<30){
+    let dmg=Math.max(1,Math.floor(Number(p.d||0)));if(a9918Buff('sk_dark_poisonres'))dmg=Math.max(1,Math.floor(dmg*.5));
+    state.player.hp=Math.max(0,Number(state.player.hp||0)-dmg);total+=dmg;p.next=Number(p.next||now)+Math.max(.1,Number(p.tick||1))*1000;
+    try{floatPlayer(dmg);log('【'+String(p.source||'中毒')+'】毒素造成 '+dmg+' 傷害。','bad')}catch(e){}
+    if(state.player.hp<=0){try{a14Death()}catch(e){state.running=false}break}
+  }
+  return total;
+}
+const a9919TickBase=tick;
+tick=function(){const r=a9919TickBase.apply(this,arguments);if(state)try{a9919PoisonTick(a9919EpochNow())}catch(e){try{console.error('Alpha99.19 player poison',e)}catch(_e){}}return r};
+
+// 說明同步；不改 MP、學習等級、原持續時間。
+if(DATA.skills?.sk_sunlight)DATA.skills.sk_sunlight.msg='狩獵場出怪節奏加快一倍；B1 以現有刷新等待減半呈現。';
+if(DATA.skills?.sk_elf_worldtree)DATA.skills.sk_elf_worldtree.msg='妖精森林周邊／眠龍洞穴1~3樓：粗糙的米索莉塊、精靈玉、元素石地區掉落各由20%提高至30%。';
+if(DATA.skills?.sk_elf_singleres)DATA.skills.sk_elf_singleres.msg='所選妖精屬性抗性 +50；抗性50時同屬性怪物魔法傷害減半，100時免疫。';
+if(DATA.skills?.sk_elf_flamesoul)DATA.skills.sk_elf_flamesoul.msg='近戰武器骰固定取最大值，且只將武器骰部分 ×1.2；遠程不生效。';
+if(DATA.skills?.sk_dark_poisonres)DATA.skills.sk_dark_poisonres.msg='自己中毒時每跳傷害減半。';
+
+const A9919_COMPLETE=new Set(['sk_sunlight','sk_elf_worldtree','sk_elf_flamesoul']);
+const A9919_CORE_READY=new Set(['sk_elf_singleres','sk_dark_poisonres']);
+const A9919_REVIEW=new Set(['monster_magic_hit_formula']);
+function a9919ForestMap(){try{return Object.values(DATA.mapCategories||{}).flat().find(v=>v?.t==='妖精森林周邊')?.v||''}catch(e){return''}}
+function a9919Audit(){
+  const issues=[];for(const id of [...A9919_COMPLETE,...A9919_CORE_READY])if(!DATA.skills?.[id])issues.push('缺少技能 '+id);
+  if(typeof window.__A9878_TEST__?.regionRoll!=='function')issues.push('Alpha98.78 地區掉落入口不存在');
+  const forest=a9919ForestMap();if(!forest)issues.push('找不到妖精森林周邊 map id');
+  return{ok:issues.length===0,build:A9919_BUILD,issues,complete:[...A9919_COMPLETE],coreReady:[...A9919_CORE_READY],remaining:[...A9919_REVIEW]};
+}
+function a9919Probe(){
+  const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+  const rows=[],bad=[],add=(name,ok,detail={})=>{rows.push({name,ok:!!ok,detail});if(!ok)bad.push(name)},oldRand=Math.random;
+  try{
+    // 日光術 helper + 真實 killMob 包裝路徑。
+    a76TestReset('elf',80);state.inVillage=false;state.mapId='training';spawnAll();state.running=true;state.skillBuffs={sk_sunlight:Date.now()+60000};let x={dead:true,respawnAt:5000};let rem=a9919SunlightRespawn(x,1000);add('日光術刷新等待減半',rem===2000&&x.respawnAt===3000,{remaining:rem,respawnAt:x.respawnAt});
+    state.skillBuffs={};state.mobs[0].dead=false;state.mobs[0].hp=Math.max(1,state.mobs[0].maxHp);let p0=performance.now();killMob(0);let normal=Math.max(0,state.mobs[0].respawnAt-performance.now());state.mobs[0].dead=false;state.mobs[0].hp=Math.max(1,state.mobs[0].maxHp);state.skillBuffs={sk_sunlight:Date.now()+60000};killMob(0);let fast=Math.max(0,state.mobs[0].respawnAt-performance.now());add('日光術實際擊殺接入 killMob',normal>100&&fast>30&&Math.abs(fast-normal/2)<35,{normal,fast});
+
+    // 世界樹：25% 固定亂數在20%基礎落空，習得後30%三項全中；直接走 Alpha98.78 exported 閉包核心。
+    const forest=a9919ForestMap();a76TestReset('elf',80);state.learnedSkills=(state.learnedSkills||[]).filter(id=>id!=='sk_elf_worldtree');let noTree=window.__A9878_TEST__.regionRoll(forest,()=>.25);state.learnedSkills.push('sk_elf_worldtree');let tree=window.__A9878_TEST__.regionRoll(forest,()=>.25);add('世界樹三項地區素材20%→30%',noTree.length===0&&tree.length===3,{forest,noTree,tree});
+
+    // 單屬性防禦：+50 穩定，不因 derive 重複累加；50抗減半、100抗免疫。
+    a76TestReset('elf',80);state.equipment={};state.element='fire';state.skillBuffs={sk_elf_singleres:Date.now()+60000};derive();let r1=state.player.resFire,d1=a9919ElementMagicDamage(100,'fire');derive();let r2=state.player.resFire,d2=a9919ElementMagicDamage(100,'fire');add('單屬性防禦所選屬性+50且derive不累加',r1===50&&r2===50,{first:r1,second:r2});add('元素抗性50使同屬性魔法減半',d1===50&&d2===50,{damage1:d1,damage2:d2});state.player.resFire=100;add('元素抗性100免疫同屬性魔法',a9919ElementMagicDamage(100,'fire')===0,{damage:a9919ElementMagicDamage(100,'fire')});
+
+    // 烈焰之魂：只補武器 contribution，小／大型分開，遠程不吃。
+    a76TestReset('elf',80);state.element='fire';const melee=Object.keys(DATA.items).find(id=>DATA.items[id]?.type==='wpn'&&!DATA.items[id]?.isBow&&!DATA.items[id]?.ranged&&Number(DATA.items[id]?.dmgS||0)>0);state.equipment.wpn=melee;state.skillBuffs={sk_elf_flamesoul:Date.now()+60000};derive();const w=a8Item(melee),mul=Math.max(1,Number(state.player.enhancePhysicalMult||1)),base=Math.floor((Number(w.dmgS||0)+Number(w.dmgL||0))/4),eS=a9919FlameSoulExtra(w,{s:'S'}),eL=a9919FlameSoulExtra(w,{s:'L'}),wantS=Math.max(0,Math.floor((Math.floor(Number(w.dmgS||0)*1.2)-base)*mul)),wantL=Math.max(0,Math.floor((Math.floor(Number(w.dmgL||w.dmgS||0)*1.2)-base)*mul));add('烈焰之魂小型怪只補正武器骰',eS===wantS,{weapon:melee,base,dmgS:w.dmgS,extra:eS,want:wantS});add('烈焰之魂大型怪依dmgL補正',eL===wantL,{weapon:melee,base,dmgL:w.dmgL,extra:eL,want:wantL});const bow=Object.keys(DATA.items).find(id=>DATA.items[id]?.type==='wpn'&&(DATA.items[id]?.isBow||DATA.items[id]?.ranged));add('烈焰之魂遠程武器不生效',a9919FlameSoulExtra(a8Item(bow),{s:'S'})===0,{bow});
+
+    // 毒性抵抗：相同30毒跳，無技能30、有技能15。
+    a76TestReset('dark',80);state.player.hp=state.player.maxHp=9999;state.skillBuffs={};a9919ApplyPlayerPoison({d:30,tick:1,dur:20},'測試毒',1000);let pd0=a9919PoisonTick(2000);state.player.hp=9999;state.skillBuffs={sk_dark_poisonres:Date.now()+60000};a9919ApplyPlayerPoison({d:30,tick:1,dur:20},'測試毒',3000);let pd1=a9919PoisonTick(4000);add('毒性抵抗每跳傷害減半',pd0===30&&pd1===15,{normal:pd0,resist:pd1});
+
+    add('怪物魔法命中公式未猜測',A9919_REVIEW.has('monster_magic_hit_formula'),{reason:'新阿肥公開資料未提供 pbase/minHit 的命中換算；不自行造公式'});
+    const prev=window.__A9918_TEST__?.probe?.();add('Alpha99.18 技能實效回歸',prev?.ok===true,{passed:prev?.passed,total:prev?.total,bad:prev?.bad});
+    const aud=a9919Audit();add('Alpha99.19 來源對碼稽核',aud.ok,aud);
+  }catch(e){bad.push(String(e?.stack||e))}
+  finally{Math.random=oldRand;try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){bad.push('restore '+String(e))}a9919ApplyVersion()}
+  return{ok:bad.length===0,build:A9919_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows,bad,remaining:[...A9919_REVIEW]};
+}
+function a9919ApplyVersion(){
+  try{document.title=A41_BRAND+' · '+A9919_BUILD}catch(e){document.title='樓梯口天堂 · '+A9919_BUILD}
+  const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9919_BUILD;
+  const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.19：日光術、世界樹、烈焰之魂接入實效；單屬性防禦與毒性抵抗完成承傷核心。';
+  const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.19｜新阿肥技能實效對碼第二批｜PC＋手機';
+  try{a55InstallLoginVersionPanel()}catch(e){}
+  const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='<b>'+A9919_BUILD+'</b><p>依新阿肥現行技能規則補完：日光術讓狩獵刷新等待減半；世界樹讓指定四區三種地區素材20%→30%；烈焰之魂只補正近戰武器骰至最大值×1.2，不放大力量。</p><p>單屬性防禦已穩定提供所選屬性+50並建立50%/100%承傷換算；毒性抵抗已建立玩家中毒跳傷減半核心。公開資料仍未給怪物 pbase/minHit 命中換算，因此不亂猜自動施毒／怪物法術命中率。</p>';
+}
+const a9919ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9919ShowLoginBase.apply(this,arguments);a9919ApplyVersion();return r};
+const a9919ShowSlotsBase=a46ShowSlots;a46ShowSlots=function(){const r=a9919ShowSlotsBase.apply(this,arguments);a9919ApplyVersion();return r};
+const a9919OpenCreateBase=a46OpenCreate;a46OpenCreate=function(){const r=a9919OpenCreateBase.apply(this,arguments);a9919ApplyVersion();return r};
+const a9919EnterSlotBase=a46EnterSlot;a46EnterSlot=function(){const r=a9919EnterSlotBase.apply(this,arguments);a9919ApplyVersion();return r};
+const a9919RenderBase=render;render=function(){const r=a9919RenderBase.apply(this,arguments);a9919ApplyVersion();return r};
+a9919ApplyVersion();
+window.__A9919_TEST__={build:A9919_BUILD,audit:a9919Audit,probe:a9919Probe,sunlight:a9919SunlightRespawn,regionRoll:window.__A9878_TEST__?.regionRoll,resists:a9919ResTotals,elementMagicDamage:a9919ElementMagicDamage,flameExtra:a9919FlameSoulExtra,applyPoison:a9919ApplyPlayerPoison,poisonTick:a9919PoisonTick,remaining:[...A9919_REVIEW],previous:window.__A9918_TEST__};
+
+
 })();
 
 
