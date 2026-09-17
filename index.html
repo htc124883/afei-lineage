@@ -33057,6 +33057,217 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
 })();
 
 
+// ===== B1.0 Alpha99.31：強化裝備真正分堆 + 圖示左上角強化值（核心內嵌） =====
+// 重要：此段刻意放在主遊戲 IIFE 關閉前，能直接存取 state / a972* / a16* 等核心函式。
+(()=>{
+  const A9931_BUILD='B1.0 Alpha99.31';
+  let A9931_CACHE=new Map(),A9931_SEQ=0;
+
+  function a9931Gear(id){const d=a8Item(id);return !!(d&&!d.isArrow&&['wpn','arm','acc'].includes(d.type))}
+  function a9931Stable(v){
+    if(v===null||v===undefined)return v;
+    if(Array.isArray(v))return v.map(a9931Stable);
+    if(typeof v==='object'){const o={};for(const k of Object.keys(v).sort())o[k]=a9931Stable(v[k]);return o}
+    return v;
+  }
+  function a9931Meta(id,raw){
+    let m={en:0,affix:{},seteff:false};
+    try{m=a16CleanGearMeta(id,raw||{})||m}catch(e){}
+    return{en:Math.max(0,Number(m.en||0)),affix:a9931Stable(m.affix||{}),seteff:m.seteff||false};
+  }
+  function a9931Sig(id,meta){const m=a9931Meta(id,meta);return JSON.stringify([String(id),m.en,m.affix,m.seteff||false])}
+  function a9931VariantName(v){
+    const id=v.id,m=v.meta||{en:0,affix:{},seteff:false};let n='';
+    try{n=a16GearName(id,Number(m.en||0),m.affix||{})}catch(e){n=a8Item(id)?.n||id}
+    if(m.seteff)n+='【'+m.seteff+'】';return n;
+  }
+  function a9931IconHtml(id,meta,cls=''){
+    let h=a67ItemIconHtml(id,cls),en=Math.max(0,Number(meta?.en||0));if(!en)return h;
+    const badge='<span class="a9929-en-badge">+'+en+'</span>';
+    const p=h.lastIndexOf('</span>');return p>=0?h.slice(0,p)+badge+h.slice(p):h+badge;
+  }
+  function a9931BuildVariants(){
+    A9931_CACHE=new Map();A9931_SEQ=0;const out=[];
+    for(const [id,n0] of Object.entries(state?.inventory||{})){
+      const total=Math.max(0,Number(n0)||0);if(total<1)continue;
+      if(!a9931Gear(id)){
+        const v={id,kind:'normal',count:total,meta:{en:0,affix:{},seteff:false},sig:'normal'};v.token='q'+(++A9931_SEQ);A9931_CACHE.set(v.token,v);out.push(v);continue;
+      }
+      try{a16EnsureEnhanceState()}catch(e){}
+      const arr=Array.isArray(state?.gearInventoryMeta?.[id])?state.gearInventoryMeta[id]:[],plain=Math.max(0,total-arr.length);
+      if(plain>0){const v={id,kind:'plain',count:plain,meta:{en:0,affix:{},seteff:false},sig:'plain'};v.token='q'+(++A9931_SEQ);A9931_CACHE.set(v.token,v);out.push(v)}
+      const groups=new Map();
+      for(let i=0;i<arr.length;i++){
+        const meta=a9931Meta(id,arr[i]),sig=a9931Sig(id,meta);let g=groups.get(sig);
+        if(!g){g={id,kind:'special',count:0,meta,sig,indices:[]};groups.set(sig,g)}g.count++;g.indices.push(i);
+      }
+      for(const v of groups.values()){v.token='q'+(++A9931_SEQ);A9931_CACHE.set(v.token,v);out.push(v)}
+    }
+    out.sort((a,b)=>{
+      const ca={wpn:0,arm:1,item:2}[a972ItemCategory(a.id)]??9,cb={wpn:0,arm:1,item:2}[a972ItemCategory(b.id)]??9;
+      const na=String(a8Item(a.id)?.n||a.id),nb=String(a8Item(b.id)?.n||b.id);
+      return ca-cb||na.localeCompare(nb,'zh-Hant')||Number(a.meta?.en||0)-Number(b.meta?.en||0)||String(a.sig).localeCompare(String(b.sig));
+    });
+    return out;
+  }
+  function a9931Resolve(v){
+    if(!v||!v.id)return null;const id=v.id;
+    if(v.kind==='normal')return{kind:'normal',meta:{en:0,affix:{},seteff:false}};
+    try{a16EnsureEnhanceState()}catch(e){}
+    if(v.kind==='plain')return a16PlainCount(id)>0?{kind:'plain',meta:{en:0,affix:{},seteff:false}}:null;
+    const arr=Array.isArray(state?.gearInventoryMeta?.[id])?state.gearInventoryMeta[id]:[];
+    for(let i=arr.length-1;i>=0;i--){const m=a9931Meta(id,arr[i]);if(a9931Sig(id,m)===v.sig)return{kind:'meta',index:i,meta:m}}
+    return null;
+  }
+
+  const a9931InvRowsBase=a972InvRows;
+  a972InvRows=function(){
+    if(!state)return a9931InvRowsBase.apply(this,arguments);
+    return a9931BuildVariants().filter(v=>A972_INV_FILTER==='all'||a972ItemCategory(v.id)===A972_INV_FILTER).map(v=>[v.id,v]);
+  };
+  const a9931BagCardBase=a972BagCard;
+  a972BagCard=function(id,n){
+    if(!n||typeof n!=='object'||!n.token)return a9931BagCardBase.apply(this,arguments);
+    const v=n,d=a8Item(id)||{n:id},name=v.kind==='normal'?(d.n||id):a9931VariantName(v),en=Math.max(0,Number(v.meta?.en||0));
+    return '<button class="a972-item-card '+(a972IsLocked(id)?'locked':'')+'" data-a972-item="'+escapeHtml(id)+'" data-a9931-variant="'+escapeHtml(v.token)+'" data-a9931-en="'+en+'" title="'+escapeHtml(name)+'">'+
+      a9931IconHtml(id,v.meta,'a972-grid-icon')+
+      '<span class="a972-item-count">'+fmt(v.count)+'</span>'+
+      (a972IsLocked(id)?'<span class="a972-lock-mark">🔒</span>':'')+
+    '</button>';
+  };
+
+  const a9931EquipmentBase=a972EquipmentHtml;
+  a972EquipmentHtml=function(){
+    if(!state)return a9931EquipmentBase.apply(this,arguments);try{a18EnsureState()}catch(e){a16EnsureEnhanceState()}
+    return '<div class="a972-equip-grid">'+A972_EQUIP_SLOTS.map(([slot,label])=>{
+      const id=state.equipment?.[slot],d=a8Item(id),en=id&&slot!=='arrow'?a16EqEn(slot):0,aff=id?state.equipAffix?.[slot]:null,se=id?state.equipSetEff?.[slot]:false;
+      const meta={en,affix:aff||{},seteff:se||false},nm=id?(typeof a68DisplayName==='function'?a68DisplayName(id,meta,slot):(d?.n||id)):'-';
+      return '<button class="a972-equip-slot '+(id?'filled':'')+'" '+(id?'data-a972-equipped="'+escapeHtml(slot)+'"':'disabled')+'>'+ '<span class="a972-slot-label">'+escapeHtml(label)+'</span>'+ (id?a9931IconHtml(id,meta,'a972-eq-icon'):'<span class="a972-empty-eq">-</span>')+ '<b>'+escapeHtml(nm)+'</b>'+ '</button>';
+    }).join('')+'</div><div class="a972-equip-tip">點已裝備的欄位可查看詳情，再選擇卸下。</div>';
+  };
+
+  function a9931TakeVariant(v){
+    const id=v.id,found=a9931Resolve(v);if(!found||a8Count(id)<1)return null;
+    let meta={en:0,affix:{},seteff:false},backup=null;
+    if(found.kind==='meta'){
+      const arr=state.gearInventoryMeta?.[id];if(!Array.isArray(arr)||found.index<0||found.index>=arr.length)return null;
+      backup={index:found.index,meta:a9931Meta(id,arr[found.index])};meta=backup.meta;arr.splice(found.index,1);if(!arr.length)delete state.gearInventoryMeta[id];a16SyncLegacyPools();
+    }
+    state.inventory[id]=Math.max(0,Number(state.inventory[id]||0)-1);if(!state.inventory[id])delete state.inventory[id];
+    return{meta,rollback:()=>{state.inventory[id]=Number(state.inventory[id]||0)+1;if(backup){const arr=(state.gearInventoryMeta[id]||(state.gearInventoryMeta[id]=[]));arr.splice(Math.min(backup.index,arr.length),0,backup.meta);a16SyncLegacyPools()}}};
+  }
+  function a9931StowEquipped(slot){
+    const id=state.equipment?.[slot];if(!id)return;
+    if(slot==='arrow'){delete state.equipment.arrow;return}
+    a8Add(id,1);a16PoolPush(id,a16EqEn(slot),state.equipAffix?.[slot],state.equipSetEff?.[slot]);delete state.equipEnhance[slot];if(state.equipAffix)delete state.equipAffix[slot];if(state.equipSetEff)delete state.equipSetEff[slot];delete state.equipment[slot];
+  }
+  function a9931EquipVariant(v){
+    if(!v||!a9931Gear(v.id))return false;try{a18EnsureState()}catch(e){a16EnsureEnhanceState()}
+    const id=v.id,d=a8Item(id);if(!d||a8Count(id)<1)return false;if(!a8ClassOk(d)){toast('你的職業無法裝備 '+d.n);return false}
+    const slot=a8SlotFor(id);if(!slot){toast('這件裝備尚未定義欄位');return false}if(slot==='shield'&&a8Item(state.equipment.wpn)?.w2h){toast('雙手武器裝備中，無法使用盾牌');return false}
+    const found=a9931Resolve(v);if(!found){toast('這一組裝備已不存在，背包已重新整理。');renderDrawers();return false}
+    const taken=a9931TakeVariant(v);if(!taken){toast('取出指定強化裝備失敗');return false}
+    if(slot==='wpn'&&d.w2h&&state.equipment.shield)a9931StowEquipped('shield');
+    if(state.equipment[slot])a9931StowEquipped(slot);
+    state.equipment[slot]=id;const m=taken.meta||{};if(Number(m.en||0)>0)state.equipEnhance[slot]=Number(m.en);else delete state.equipEnhance[slot];if(a16HasAffix(m.affix))state.equipAffix[slot]=m.affix;else delete state.equipAffix[slot];if(m.seteff)state.equipSetEff[slot]=m.seteff;else delete state.equipSetEff[slot];
+    derive();save();log('裝備 '+a16GearName(id,a16EqEn(slot),state.equipAffix?.[slot])+(m.seteff?'【'+m.seteff+'】':''),'gain');render();return true;
+  }
+  function a9931CompareHtml(v){
+    const id=v.id,d=a8Item(id)||{},targets=a68EquipTargets(id);if(!targets.length)return'';let actual=targets;if(d.slot==='ring'){actual=targets.filter(x=>state?.equipment?.[x]);if(!actual.length)actual=['ring1']}
+    return '<section class="a68-section"><h4>裝備比較 <small>候選 → 目前欄位</small></h4>'+actual.map(sl=>a68CompareOne(id,v.meta,sl)).join('')+'</section>';
+  }
+  function a9931DetailHtml(v){
+    const id=v.id,d=a8Item(id)||DATA.items?.[id];if(!d)return'<div class="a972-empty">找不到物品資料。</div>';
+    const meta=v.meta||{en:0,affix:{},seteff:false},count=Math.max(1,Number(v.count)||1),name=v.kind==='normal'?(d.n||id):a9931VariantName(v),info=a68BaseInfoRows(id),aff=a68MetaSummary(id,meta,a68EquipTargets(id)[0]||''),locked=a972IsLocked(id),gear=a9931Gear(id),unit=a10Sellable(id)?a971SellUnit(id):0;
+    let action='';
+    if(gear)action+='<button class="a972-detail-act gold" data-a9931-equip>裝備</button><button class="a972-detail-act compare" data-a9931-compare>⚖ 與身上比較</button>';
+    else if(!d.noUse&&(d.type==='pot'||d.type==='scroll'||d.type==='skillbk'||d.eff))action+='<button class="a972-detail-act gold" data-a9931-use>使用</button>';
+    if(gear&&!d.noEnh){action+='<button class="a972-detail-act enhance" data-a9931-enhance>強化（這一組）</button>';if(Number(meta.en||0)<Number(d.safe||0))action+='<button class="a972-detail-act safe" data-a9931-safe>一鍵強化安定（→ +'+Number(d.safe||0)+'）</button>'}
+    if(v.kind==='plain'&&unit>0&&!locked){action+='<button class="a972-detail-act sell" data-a9931-sell-one>出售 💰'+fmt(unit)+'</button><button class="a972-detail-act sell" data-a9931-sell-all>全部出售 💰'+fmt(unit*count)+'</button>'}
+    const seteff=meta.seteff?'<div class="a972-detail-affix">✦ '+escapeHtml(meta.seteff)+'</div>':'';
+    return '<div class="a972-detail-card"><button class="a972-lock-btn '+(locked?'locked':'')+'" data-a9931-lock>'+(locked?'🔒':'🔓')+'</button>'+ '<div class="a972-detail-icon">'+a9931IconHtml(id,meta,'detail')+'</div><h2>'+escapeHtml(name)+' <small>('+fmt(count)+')</small></h2>'+ '<div class="a972-detail-info">'+info.map(([k,val])=>'<div><span>'+escapeHtml(k)+'：</span><b>'+escapeHtml(val)+'</b></div>').join('')+'</div>'+ (aff?'<div class="a972-detail-affix">'+escapeHtml(aff)+'</div>':'')+seteff+ '<div class="a972-detail-actions">'+action+'<button class="a972-detail-act close" data-a9931-close>關閉</button></div><div class="a972-compare-holder"></div></div>';
+  }
+  function a9931Target(v){const r=a9931Resolve(v);if(!r)return null;return r.kind==='plain'?{kind:'plain'}:r.kind==='meta'?{kind:'meta',index:r.index}:null}
+  function a9931EnhanceVariant(v,safe=false){
+    const d=a8Item(v.id),scroll=a972EnhanceScrollFor(v.id);if(!d||!scroll){toast('背包沒有可用的一般強化卷軸');return false}if(a972IsLocked(v.id)){toast('此裝備已鎖定，請先解鎖再強化。');return false}
+    let cur={...v,meta:a9931Meta(v.id,v.meta)},changed=false,guard=safe?30:1;
+    while(guard-->0){const en=Number(cur.meta.en||0),goal=Math.max(0,Number(d.safe||0));if(safe&&en>=goal)break;const target=a9931Target(cur);if(!target){toast('找不到這一組裝備');break}
+      const r=window.__A9913_TEST__?.enhanceInventory?.(scroll,v.id,target,{closeModal:false,confirmUnsafe:!safe});if(!r)break;changed=true;if(r.result==='destroy')break;if(r.to!=null){cur.kind='special';cur.meta={...cur.meta,en:Number(r.to)};cur.sig=a9931Sig(cur.id,cur.meta)}if(!safe)break;
+    }
+    if(!changed&&safe)toast(a8Count(scroll)<1?'強化卷軸不足':'目前已達安定值');document.getElementById('a68-item-modal')?.classList.remove('open');try{renderDrawers()}catch(e){render()}return changed;
+  }
+  function a9931OpenVariant(token){
+    const v=A9931_CACHE.get(String(token));if(!v)return false;if(v.kind==='normal'&&!a9931Gear(v.id))return a68OpenItem(v.id,'');
+    const m=a68EnsureModal();m.dataset.item=v.id;m.dataset.slot='';m.dataset.a9931Token=v.token;const body=m.querySelector('#a68-modal-body');body.innerHTML=a9931DetailHtml(v);m.classList.add('open');
+    body.querySelector('[data-a9931-lock]')?.addEventListener('click',()=>{a972ToggleLock(v.id);a9931OpenVariant(v.token)});
+    body.querySelector('[data-a9931-equip]')?.addEventListener('click',()=>{m.classList.remove('open');a9931EquipVariant(v)});
+    body.querySelector('[data-a9931-use]')?.addEventListener('click',()=>{m.classList.remove('open');a8UseItem(v.id)});
+    body.querySelector('[data-a9931-compare]')?.addEventListener('click',e=>{const h=body.querySelector('.a972-compare-holder');if(h)h.innerHTML=a9931CompareHtml(v);e.currentTarget.disabled=true});
+    body.querySelector('[data-a9931-enhance]')?.addEventListener('click',()=>a9931EnhanceVariant(v,false));
+    body.querySelector('[data-a9931-safe]')?.addEventListener('click',()=>a9931EnhanceVariant(v,true));
+    body.querySelector('[data-a9931-sell-one]')?.addEventListener('click',()=>{if(a10Sell(v.id,1)){m.classList.remove('open');renderDrawers()}});
+    body.querySelector('[data-a9931-sell-all]')?.addEventListener('click',()=>{const q=Math.min(Number(v.count)||0,a16PlainCount(v.id));if(q>0&&a10Sell(v.id,q)){m.classList.remove('open');renderDrawers()}});
+    body.querySelector('[data-a9931-close]')?.addEventListener('click',()=>m.classList.remove('open'));return true;
+  }
+
+  const a9931BindBase=bindDrawer;
+  bindDrawer=function(root){
+    a9931BindBase(root);
+    root.querySelectorAll('[data-a9931-variant]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();a9931OpenVariant(b.dataset.a9931Variant)});
+  };
+
+  function a9931ApplyVersion(){
+    window.__BUILD_VERSION__=A9931_BUILD;
+    try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+A9931_BUILD}catch(_e){}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9931_BUILD;
+    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9931_BUILD+' · 強化分堆＋角標核心修正';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.31｜強化分堆＋圖示角標核心修正｜PC＋手機';
+  }
+
+  function a9931MountInventory(){
+    if(!state)a76TestReset('knight',1);A972_INV_TAB='bag';A972_INV_FILTER='all';
+    const d=document.getElementById('drawer');if(!d)return false;d.innerHTML=drawerHtml('inventory');bindDrawer(d);return true;
+  }
+  function a9931Probe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null,rows=[];const add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      a76TestReset('knight',1);state.inventory={wpn_1:7};state.gearInventoryMeta={};state.affixInventory={};state.enhanceInventory={};a16EnsureEnhanceState();
+      a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{bless:true});
+      const vs=a9931BuildVariants().filter(x=>x.id==='wpn_1'),groups=vs.map(x=>({en:Number(x.meta.en||0),count:Number(x.count||0),aff:x.meta.affix||{}}));
+      add('資料層 +0/+1/+2 分堆',vs.some(x=>x.kind==='plain'&&x.count===2)&&vs.some(x=>x.meta.en===1&&x.count===2)&&vs.filter(x=>x.meta.en===2).length===2,{groups});
+      add('同強化不同詞綴分開',vs.filter(x=>x.meta.en===2).length===2,{groups:vs.filter(x=>x.meta.en===2).map(x=>({count:x.count,aff:x.meta.affix}))});
+      A972_INV_TAB='bag';A972_INV_FILTER='all';const html=a972InventoryHtml();
+      add('實際背包輸出 +1/+2 角標',html.includes('>+1<')&&html.includes('>+2<'),{});
+      add('實際背包輸出分組 token',html.includes('data-a9931-variant=')&&(html.match(/data-a9931-variant=/g)||[]).length>=4,{cards:(html.match(/data-a9931-variant=/g)||[]).length});
+      const v1=vs.find(x=>x.meta.en===1);a9931EquipVariant(v1);add('點 +1 組實際裝備 +1',state.equipment?.wpn==='wpn_1'&&a16EqEn('wpn')===1,{en:a16EqEn('wpn')});
+      a8Unequip('wpn');const after=a9931BuildVariants().filter(x=>x.id==='wpn_1');add('卸下後 +1 回到 +1 分組',after.some(x=>Number(x.meta.en||0)===1&&Number(x.count||0)===2),{groups:after.map(x=>({en:Number(x.meta.en||0),count:x.count}))});
+      const saved=JSON.parse(JSON.stringify(state));const sm=Array.isArray(saved?.gearInventoryMeta?.wpn_1)?saved.gearInventoryMeta.wpn_1:[];add('存檔序列化保留強化實體 metadata',sm.filter(x=>Number(x.en||0)===1).length===2&&sm.filter(x=>Number(x.en||0)===2).length===3,{savedMeta:sm.map(x=>({en:x.en,affix:x.affix||{}}))});
+      a9931MountInventory();const cards=[...document.querySelectorAll('#drawer [data-a9931-variant]')];const badges=[...document.querySelectorAll('#drawer .a9929-en-badge')].map(x=>x.textContent.trim());
+      add('DOM 實際分成多格',cards.length>=4,{cards:cards.length});add('DOM 左上角有 +1/+2',badges.includes('+1')&&badges.includes('+2'),{badges});
+      a76TestReset('knight',1);state.inventory={wpn_1:2,scroll_weapon:1};state.gearInventoryMeta={};state.affixInventory={};state.enhanceInventory={};a16EnsureEnhanceState();
+      const er=window.__A9913_TEST__?.enhanceInventory?.('scroll_weapon','wpn_1',{kind:'plain'},{closeModal:false,confirmUnsafe:false});const ev=a9931BuildVariants().filter(x=>x.id==='wpn_1');
+      add('實際強化 +0→+1 後立即拆成兩格',!!er&&ev.some(x=>Number(x.meta.en||0)===0&&Number(x.count||0)===1)&&ev.some(x=>Number(x.meta.en||0)===1&&Number(x.count||0)===1),{enhance:er,groups:ev.map(x=>({en:Number(x.meta.en||0),count:x.count}))});
+    }catch(e){add('Alpha99.31 probe exception',false,{error:String(e?.stack||e)})}
+    finally{if(snap){state=snap;try{derive();render()}catch(e){}}}
+    return{ok:rows.every(x=>x.ok),build:A9931_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+
+  const a9931RenderBase=render;render=function(){const r=a9931RenderBase.apply(this,arguments);a9931ApplyVersion();return r};
+  const a9931InitBase=init;init=function(){const r=a9931InitBase.apply(this,arguments);a9931ApplyVersion();return r};
+  if(typeof a46ShowLogin==='function'){const base=a46ShowLogin;a46ShowLogin=function(){const r=base.apply(this,arguments);a9931ApplyVersion();return r}}
+  if(typeof a46ShowSlots==='function'){const base=a46ShowSlots;a46ShowSlots=function(){const r=base.apply(this,arguments);a9931ApplyVersion();return r}}
+  if(typeof a46OpenCreate==='function'){const base=a46OpenCreate;a46OpenCreate=function(){const r=base.apply(this,arguments);a9931ApplyVersion();return r}}
+  function a9931Demo(){
+    a76TestReset('knight',1);state.inventory={wpn_1:7};state.gearInventoryMeta={};state.affixInventory={};state.enhanceInventory={};a16EnsureEnhanceState();
+    a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{bless:true});
+    derive();a9931MountInventory();return true;
+  }
+  function a9931Snapshot(){return{equipment:{...(state?.equipment||{})},equipEnhance:{...(state?.equipEnhance||{})},variants:a9931BuildVariants().map(v=>({id:v.id,en:Number(v.meta?.en||0),count:Number(v.count||0),token:v.token})),build:A9931_BUILD}}
+  window.__A9931_TEST__={build:A9931_BUILD,probe:a9931Probe,variants:()=>a9931BuildVariants(),mount:a9931MountInventory,open:a9931OpenVariant,demo:a9931Demo,snapshot:a9931Snapshot,applyVersion:a9931ApplyVersion};
+  a9931ApplyVersion();
+})();
+
+
 })();
 </script>
 
@@ -33200,308 +33411,11 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
   .a9929-en-badge{min-width:16px!important;height:14px!important;font-size:8px!important;line-height:12px!important;padding:0 2px!important}
 }
 </style>
-<script id="a9929-enhance-stack-patch">
-(()=>{
-  const A9929_BUILD='B1.0 Alpha99.29';
-  let A9929_CACHE=new Map(),A9929_SEQ=0;
-
-  function a9929Gear(id){const d=a8Item(id);return !!(d&&!d.isArrow&&['wpn','arm','acc'].includes(d.type))}
-  function a9929Stable(v){
-    if(v===null||v===undefined)return v;
-    if(Array.isArray(v))return v.map(a9929Stable);
-    if(typeof v==='object'){const o={};for(const k of Object.keys(v).sort())o[k]=a9929Stable(v[k]);return o}
-    return v;
-  }
-  function a9929Meta(id,raw){
-    let m={en:0,affix:{},seteff:false};
-    try{m=a16CleanGearMeta(id,raw||{})||m}catch(e){}
-    return{en:Math.max(0,Number(m.en||0)),affix:a9929Stable(m.affix||{}),seteff:m.seteff||false};
-  }
-  function a9929Sig(id,meta){const m=a9929Meta(id,meta);return JSON.stringify([String(id),m.en,m.affix,m.seteff||false])}
-  function a9929VariantName(v){
-    const id=v.id,m=v.meta||{en:0,affix:{},seteff:false};let n='';
-    try{n=a16GearName(id,Number(m.en||0),m.affix||{})}catch(e){n=a8Item(id)?.n||id}
-    if(m.seteff)n+='【'+m.seteff+'】';return n;
-  }
-  function a9929IconHtml(id,meta,cls=''){
-    let h=a67ItemIconHtml(id,cls),en=Math.max(0,Number(meta?.en||0));if(!en)return h;
-    const badge='<span class="a9929-en-badge">+'+en+'</span>';
-    const p=h.lastIndexOf('</span>');return p>=0?h.slice(0,p)+badge+h.slice(p):h+badge;
-  }
-  function a9929BuildVariants(){
-    A9929_CACHE=new Map();A9929_SEQ=0;const out=[];
-    for(const [id,n0] of Object.entries(state?.inventory||{})){
-      const total=Math.max(0,Number(n0)||0);if(total<1)continue;
-      if(!a9929Gear(id)){
-        const v={id,kind:'normal',count:total,meta:{en:0,affix:{},seteff:false},sig:'normal'};v.token='v'+(++A9929_SEQ);A9929_CACHE.set(v.token,v);out.push(v);continue;
-      }
-      try{a16EnsureEnhanceState()}catch(e){}
-      const arr=Array.isArray(state?.gearInventoryMeta?.[id])?state.gearInventoryMeta[id]:[],plain=Math.max(0,total-arr.length);
-      if(plain>0){const v={id,kind:'plain',count:plain,meta:{en:0,affix:{},seteff:false},sig:'plain'};v.token='v'+(++A9929_SEQ);A9929_CACHE.set(v.token,v);out.push(v)}
-      const groups=new Map();
-      for(let i=0;i<arr.length;i++){
-        const meta=a9929Meta(id,arr[i]),sig=a9929Sig(id,meta);let g=groups.get(sig);
-        if(!g){g={id,kind:'special',count:0,meta,sig,indices:[]};groups.set(sig,g)}g.count++;g.indices.push(i);
-      }
-      for(const v of groups.values()){v.token='v'+(++A9929_SEQ);A9929_CACHE.set(v.token,v);out.push(v)}
-    }
-    out.sort((a,b)=>{
-      const ca={wpn:0,arm:1,item:2}[a972ItemCategory(a.id)]??9,cb={wpn:0,arm:1,item:2}[a972ItemCategory(b.id)]??9;
-      const na=String(a8Item(a.id)?.n||a.id),nb=String(a8Item(b.id)?.n||b.id);
-      return ca-cb||na.localeCompare(nb,'zh-Hant')||Number(a.meta?.en||0)-Number(b.meta?.en||0)||String(a.sig).localeCompare(String(b.sig));
-    });
-    return out;
-  }
-  function a9929Resolve(v){
-    if(!v||!v.id)return null;const id=v.id;
-    if(v.kind==='normal')return{kind:'normal',meta:{en:0,affix:{},seteff:false}};
-    try{a16EnsureEnhanceState()}catch(e){}
-    if(v.kind==='plain')return a16PlainCount(id)>0?{kind:'plain',meta:{en:0,affix:{},seteff:false}}:null;
-    const arr=Array.isArray(state?.gearInventoryMeta?.[id])?state.gearInventoryMeta[id]:[];
-    for(let i=arr.length-1;i>=0;i--){const m=a9929Meta(id,arr[i]);if(a9929Sig(id,m)===v.sig)return{kind:'meta',index:i,meta:m}}
-    return null;
-  }
-
-  const a9929InvRowsBase=a972InvRows;
-  a972InvRows=function(){
-    if(!state)return a9929InvRowsBase.apply(this,arguments);
-    return a9929BuildVariants().filter(v=>A972_INV_FILTER==='all'||a972ItemCategory(v.id)===A972_INV_FILTER).map(v=>[v.id,v]);
-  };
-  const a9929BagCardBase=a972BagCard;
-  a972BagCard=function(id,n){
-    if(!n||typeof n!=='object'||!n.token)return a9929BagCardBase.apply(this,arguments);
-    const v=n,d=a8Item(id)||{n:id},name=v.kind==='normal'?(d.n||id):a9929VariantName(v);
-    return '<button class="a972-item-card '+(a972IsLocked(id)?'locked':'')+'" data-a972-item="'+escapeHtml(id)+'" data-a9929-variant="'+escapeHtml(v.token)+'" title="'+escapeHtml(name)+'">'+
-      a9929IconHtml(id,v.meta,'a972-grid-icon')+
-      '<span class="a972-item-count">'+fmt(v.count)+'</span>'+
-      (a972IsLocked(id)?'<span class="a972-lock-mark">🔒</span>':'')+
-    '</button>';
-  };
-
-  const a9929EquipmentBase=a972EquipmentHtml;
-  a972EquipmentHtml=function(){
-    if(!state)return a9929EquipmentBase.apply(this,arguments);try{a16EnsureEnhanceState()}catch(e){}
-    return '<div class="a972-equip-grid">'+A972_EQUIP_SLOTS.map(([slot,label])=>{
-      const id=state.equipment?.[slot],d=a8Item(id),en=id&&slot!=='arrow'?a16EqEn(slot):0,aff=id?state.equipAffix?.[slot]:null,se=id?state.equipSetEff?.[slot]:false;
-      const meta={en,affix:aff||{},seteff:se||false},nm=id?(typeof a68DisplayName==='function'?a68DisplayName(id,meta,slot):(d?.n||id)):'-';
-      return '<button class="a972-equip-slot '+(id?'filled':'')+'" '+(id?'data-a972-equipped="'+escapeHtml(slot)+'"':'disabled')+'>'+ '<span class="a972-slot-label">'+escapeHtml(label)+'</span>'+ (id?a9929IconHtml(id,meta,'a972-eq-icon'):'<span class="a972-empty-eq">-</span>')+ '<b>'+escapeHtml(nm)+'</b>'+ '</button>';
-    }).join('')+'</div><div class="a972-equip-tip">點已裝備的欄位可查看詳情，再選擇卸下。</div>';
-  };
-
-  function a9929TakeVariant(v){
-    const id=v.id,found=a9929Resolve(v);if(!found||a8Count(id)<1)return null;
-    let meta={en:0,affix:{},seteff:false},backup=null;
-    if(found.kind==='meta'){
-      const arr=state.gearInventoryMeta?.[id];if(!Array.isArray(arr)||found.index<0||found.index>=arr.length)return null;
-      backup={index:found.index,meta:a9929Meta(id,arr[found.index])};meta=backup.meta;arr.splice(found.index,1);if(!arr.length)delete state.gearInventoryMeta[id];a16SyncLegacyPools();
-    }
-    state.inventory[id]=Math.max(0,Number(state.inventory[id]||0)-1);if(!state.inventory[id])delete state.inventory[id];
-    return{meta,rollback:()=>{state.inventory[id]=Number(state.inventory[id]||0)+1;if(backup){const arr=(state.gearInventoryMeta[id]||(state.gearInventoryMeta[id]=[]));arr.splice(Math.min(backup.index,arr.length),0,backup.meta);a16SyncLegacyPools()}}};
-  }
-  function a9929StowEquipped(slot){
-    const id=state.equipment?.[slot];if(!id)return;
-    if(slot==='arrow'){delete state.equipment.arrow;return}
-    a8Add(id,1);a16PoolPush(id,a16EqEn(slot),state.equipAffix?.[slot],state.equipSetEff?.[slot]);delete state.equipEnhance[slot];if(state.equipAffix)delete state.equipAffix[slot];if(state.equipSetEff)delete state.equipSetEff[slot];delete state.equipment[slot];
-  }
-  function a9929EquipVariant(v){
-    if(!v||!a9929Gear(v.id))return false;try{a18EnsureState()}catch(e){a16EnsureEnhanceState()}
-    const id=v.id,d=a8Item(id);if(!d||a8Count(id)<1)return false;if(!a8ClassOk(d)){toast('你的職業無法裝備 '+d.n);return false}
-    const slot=a8SlotFor(id);if(!slot){toast('這件裝備尚未定義欄位');return false}if(slot==='shield'&&a8Item(state.equipment.wpn)?.w2h){toast('雙手武器裝備中，無法使用盾牌');return false}
-    const found=a9929Resolve(v);if(!found){toast('這一組裝備已不存在，背包已重新整理。');renderDrawers();return false}
-    const taken=a9929TakeVariant(v);if(!taken){toast('取出指定強化裝備失敗');return false}
-    if(slot==='wpn'&&d.w2h&&state.equipment.shield)a9929StowEquipped('shield');
-    if(state.equipment[slot])a9929StowEquipped(slot);
-    state.equipment[slot]=id;const m=taken.meta||{};if(Number(m.en||0)>0)state.equipEnhance[slot]=Number(m.en);else delete state.equipEnhance[slot];if(a16HasAffix(m.affix))state.equipAffix[slot]=m.affix;else delete state.equipAffix[slot];if(m.seteff)state.equipSetEff[slot]=m.seteff;else delete state.equipSetEff[slot];
-    derive();save();log('裝備 '+a16GearName(id,a16EqEn(slot),state.equipAffix?.[slot])+(m.seteff?'【'+m.seteff+'】':''),'gain');render();return true;
-  }
-  function a9929CompareHtml(v){
-    const id=v.id,d=a8Item(id)||{},targets=a68EquipTargets(id);if(!targets.length)return'';let actual=targets;if(d.slot==='ring'){actual=targets.filter(x=>state?.equipment?.[x]);if(!actual.length)actual=['ring1']}
-    return '<section class="a68-section"><h4>裝備比較 <small>候選 → 目前欄位</small></h4>'+actual.map(sl=>a68CompareOne(id,v.meta,sl)).join('')+'</section>';
-  }
-  function a9929DetailHtml(v){
-    const id=v.id,d=a8Item(id)||DATA.items?.[id];if(!d)return'<div class="a972-empty">找不到物品資料。</div>';
-    const meta=v.meta||{en:0,affix:{},seteff:false},count=Math.max(1,Number(v.count)||1),name=v.kind==='normal'?(d.n||id):a9929VariantName(v),info=a68BaseInfoRows(id),aff=a68MetaSummary(id,meta,a68EquipTargets(id)[0]||''),locked=a972IsLocked(id),gear=a9929Gear(id),unit=a10Sellable(id)?a971SellUnit(id):0;
-    let action='';
-    if(gear)action+='<button class="a972-detail-act gold" data-a9929-equip>裝備</button><button class="a972-detail-act compare" data-a9929-compare>⚖ 與身上比較</button>';
-    else if(!d.noUse&&(d.type==='pot'||d.type==='scroll'||d.type==='skillbk'||d.eff))action+='<button class="a972-detail-act gold" data-a9929-use>使用</button>';
-    if(gear&&!d.noEnh){action+='<button class="a972-detail-act enhance" data-a9929-enhance>強化（這一組）</button>';if(Number(meta.en||0)<Number(d.safe||0))action+='<button class="a972-detail-act safe" data-a9929-safe>一鍵強化安定（→ +'+Number(d.safe||0)+'）</button>'}
-    if(v.kind==='plain'&&unit>0&&!locked){action+='<button class="a972-detail-act sell" data-a9929-sell-one>出售 💰'+fmt(unit)+'</button><button class="a972-detail-act sell" data-a9929-sell-all>全部出售 💰'+fmt(unit*count)+'</button>'}
-    const seteff=meta.seteff?'<div class="a972-detail-affix">✦ '+escapeHtml(meta.seteff)+'</div>':'';
-    return '<div class="a972-detail-card"><button class="a972-lock-btn '+(locked?'locked':'')+'" data-a9929-lock>'+(locked?'🔒':'🔓')+'</button>'+ '<div class="a972-detail-icon">'+a9929IconHtml(id,meta,'detail')+'</div><h2>'+escapeHtml(name)+' <small>('+fmt(count)+')</small></h2>'+ '<div class="a972-detail-info">'+info.map(([k,val])=>'<div><span>'+escapeHtml(k)+'：</span><b>'+escapeHtml(val)+'</b></div>').join('')+'</div>'+ (aff?'<div class="a972-detail-affix">'+escapeHtml(aff)+'</div>':'')+seteff+ '<div class="a972-detail-actions">'+action+'<button class="a972-detail-act close" data-a9929-close>關閉</button></div><div class="a972-compare-holder"></div></div>';
-  }
-  function a9929Target(v){const r=a9929Resolve(v);if(!r)return null;return r.kind==='plain'?{kind:'plain'}:r.kind==='meta'?{kind:'meta',index:r.index}:null}
-  function a9929EnhanceVariant(v,safe=false){
-    const d=a8Item(v.id),scroll=a972EnhanceScrollFor(v.id);if(!d||!scroll){toast('背包沒有可用的一般強化卷軸');return false}if(a972IsLocked(v.id)){toast('此裝備已鎖定，請先解鎖再強化。');return false}
-    let cur={...v,meta:a9929Meta(v.id,v.meta)},changed=false,guard=safe?30:1;
-    while(guard-->0){const en=Number(cur.meta.en||0),goal=Math.max(0,Number(d.safe||0));if(safe&&en>=goal)break;const target=a9929Target(cur);if(!target){toast('找不到這一組裝備');break}
-      const r=window.__A9913_TEST__?.enhanceInventory?.(scroll,v.id,target,{closeModal:false,confirmUnsafe:!safe});if(!r)break;changed=true;if(r.result==='destroy')break;if(r.to!=null){cur.kind='special';cur.meta={...cur.meta,en:Number(r.to)};cur.sig=a9929Sig(cur.id,cur.meta)}if(!safe)break;
-    }
-    if(!changed&&safe)toast(a8Count(scroll)<1?'強化卷軸不足':'目前已達安定值');document.getElementById('a68-item-modal')?.classList.remove('open');try{renderDrawers()}catch(e){render()}return changed;
-  }
-  function a9929OpenVariant(token){
-    const v=A9929_CACHE.get(String(token));if(!v)return false;if(v.kind==='normal'&&!a9929Gear(v.id))return a68OpenItem(v.id,'');
-    const m=a68EnsureModal();m.dataset.item=v.id;m.dataset.slot='';m.dataset.a9929Token=v.token;const body=m.querySelector('#a68-modal-body');body.innerHTML=a9929DetailHtml(v);m.classList.add('open');
-    body.querySelector('[data-a9929-lock]')?.addEventListener('click',()=>{a972ToggleLock(v.id);a9929OpenVariant(v.token)});
-    body.querySelector('[data-a9929-equip]')?.addEventListener('click',()=>{m.classList.remove('open');a9929EquipVariant(v)});
-    body.querySelector('[data-a9929-use]')?.addEventListener('click',()=>{m.classList.remove('open');a8UseItem(v.id)});
-    body.querySelector('[data-a9929-compare]')?.addEventListener('click',e=>{const h=body.querySelector('.a972-compare-holder');if(h)h.innerHTML=a9929CompareHtml(v);e.currentTarget.disabled=true});
-    body.querySelector('[data-a9929-enhance]')?.addEventListener('click',()=>a9929EnhanceVariant(v,false));
-    body.querySelector('[data-a9929-safe]')?.addEventListener('click',()=>a9929EnhanceVariant(v,true));
-    body.querySelector('[data-a9929-sell-one]')?.addEventListener('click',()=>{if(a10Sell(v.id,1)){m.classList.remove('open');renderDrawers()}});
-    body.querySelector('[data-a9929-sell-all]')?.addEventListener('click',()=>{const q=Math.min(Number(v.count)||0,a16PlainCount(v.id));if(q>0&&a10Sell(v.id,q)){m.classList.remove('open');renderDrawers()}});
-    body.querySelector('[data-a9929-close]')?.addEventListener('click',()=>m.classList.remove('open'));return true;
-  }
-
-  const a9929BindBase=bindDrawer;
-  bindDrawer=function(root){
-    a9929BindBase(root);
-    root.querySelectorAll('[data-a9929-variant]').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();a9929OpenVariant(b.dataset.a9929Variant)});
-  };
-
-  function a9929ApplyVersion(){
-    if(String(window.__BUILD_VERSION__||'').includes('Alpha99.30'))return;
-    try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+A9929_BUILD}catch(_e){}
-    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9929_BUILD;
-    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9929_BUILD+' · 強化分堆＋角標';
-    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.29｜強化裝備分堆＋圖示強化值｜PC＋手機';
-  }
-  function a9929Probe(){
-    const snap=state?JSON.parse(JSON.stringify(state)):null,rows=[];const add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
-    try{
-      if(typeof a76TestReset==='function')a76TestReset('knight',50);state.inventory={wpn_1:7};state.gearInventoryMeta={};a16EnsureEnhanceState();a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{bless:true});
-      const vs=a9929BuildVariants().filter(x=>x.id==='wpn_1');const counts=vs.map(x=>({en:Number(x.meta.en||0),count:x.count,aff:x.meta.affix||{}}));
-      add('+0/+1/+2 依強化值分堆',vs.some(x=>x.kind==='plain'&&x.count===2)&&vs.some(x=>x.meta.en===1&&x.count===2)&&vs.some(x=>x.meta.en===2&&x.count===2&&!a16HasAffix(x.meta.affix)),{counts});
-      add('同強化值不同詞綴不混堆',vs.filter(x=>x.meta.en===2).length===2,{groups:vs.filter(x=>x.meta.en===2).map(x=>({count:x.count,aff:x.meta.affix}))});
-      const v2=vs.find(x=>x.meta.en===2&&!a16HasAffix(x.meta.affix)),card=a972BagCard('wpn_1',v2);add('強化圖示左上角顯示 +2',card.includes('a9929-en-badge')&&card.includes('>+2<'),{card:card.slice(0,240)});
-      const v1=vs.find(x=>x.meta.en===1);a9929EquipVariant(v1);add('點 +1 分堆會裝備 +1 實體',state.equipment?.wpn==='wpn_1'&&a16EqEn('wpn')===1,{equipped:state.equipment?.wpn,en:a16EqEn('wpn')});
-    }catch(e){add('Alpha99.29 probe exception',false,{error:String(e?.stack||e)})}
-    finally{if(snap){state=snap;try{derive();render()}catch(e){}}}
-    return{ok:rows.every(x=>x.ok),build:A9929_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
-  }
-
-  try{if(typeof render==='function'){const base=render;render=function(){const r=base.apply(this,arguments);a9929ApplyVersion();return r}}if(typeof a46ShowLogin==='function'){const base=a46ShowLogin;a46ShowLogin=function(){const r=base.apply(this,arguments);a9929ApplyVersion();return r}}}catch(_e){}
-  window.__A9929_TEST__={build:A9929_BUILD,variants:a9929BuildVariants,probe:a9929Probe,open:a9929OpenVariant,equip:a9929EquipVariant,icon:a9929IconHtml};
-  a9929ApplyVersion();
-})();
-</script>
-
-
-<!-- ===== B1.0 Alpha99.30：真正分堆修正（直接接管背包渲染） ===== -->
+<!-- ===== 舊 Alpha99.30 樣式保留；99.31 核心修正已內嵌 ===== -->
 <style id="a9930-true-stack-style">
 .a972-item-card[data-a9930-en]:not([data-a9930-en="0"]){border-color:#9a7b31!important;box-shadow:inset 0 0 0 1px rgba(235,192,72,.18),inset 0 -9px 16px rgba(0,0,0,.18)!important}
 .a972-item-card[data-a9930-en]:not([data-a9930-en="0"]) .a972-item-count{color:#ffe27a!important}
 .a9930-stack-note{margin:6px 0 8px;padding:6px 8px;border:1px solid #4c4128;border-radius:5px;background:#151108;color:#bcae86;font-size:9px;line-height:1.45}
 .a9930-stack-note b{color:#f1d07a}
 </style>
-<script id="a9930-true-stack-patch">
-(()=>{
-  const A9930_BUILD='B1.0 Alpha99.30';
-
-  function a9930ApplyVersion(){
-    try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+A9930_BUILD}catch(_e){}
-    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9930_BUILD;
-    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9930_BUILD+' · 強化真正分堆';
-    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.30｜強化真正分堆＋圖示角標｜PC＋手機';
-    window.__BUILD_VERSION__=A9930_BUILD;
-  }
-
-  function a9930Variants(){
-    try{
-      if(window.__A9929_TEST__?.variants)return window.__A9929_TEST__.variants();
-    }catch(e){}
-    return [];
-  }
-  function a9930Name(v){
-    const d=a8Item(v.id)||{n:v.id},m=v.meta||{};let n=d.n||v.id;
-    try{n=a16GearName(v.id,Number(m.en||0),m.affix||{})}catch(e){if(Number(m.en||0)>0)n='+'+Number(m.en||0)+' '+n}
-    if(m.seteff)n+='【'+m.seteff+'】';return n;
-  }
-  function a9930Icon(v){
-    try{if(window.__A9929_TEST__?.icon)return window.__A9929_TEST__.icon(v.id,v.meta||{},'a972-grid-icon')}catch(e){}
-    return a67ItemIconHtml(v.id,'a972-grid-icon');
-  }
-  function a9930Card(v){
-    const en=Math.max(0,Number(v?.meta?.en||0)),name=a9930Name(v),id=v.id;
-    return '<button class="a972-item-card '+(a972IsLocked(id)?'locked':'')+'" data-a972-item="'+escapeHtml(id)+'" data-a9929-variant="'+escapeHtml(v.token)+'" data-a9930-en="'+en+'" title="'+escapeHtml(name)+'">'+
-      a9930Icon(v)+
-      '<span class="a972-item-count">'+fmt(v.count)+'</span>'+
-      (a972IsLocked(id)?'<span class="a972-lock-mark">🔒</span>':'')+
-    '</button>';
-  }
-  function a9930Head(vs){
-    const qty=Object.values(state?.inventory||{}).reduce((a,b)=>a+Math.max(0,Number(b)||0),0),filled=A972_EQUIP_SLOTS.filter(([sl])=>state?.equipment?.[sl]).length;
-    return '<div class="a9816-work-head"><div><i>INVENTORY</i><b>背包／裝備</b></div><span>分組 <strong>'+fmt(vs.length)+'</strong></span><span>數量 <strong>'+fmt(qty)+'</strong></span><span>裝備 <strong>'+filled+'/'+A972_EQUIP_SLOTS.length+'</strong></span></div>';
-  }
-  function a9930InventoryHtml(){
-    a972EnsureState();
-    const all=a9930Variants();
-    const tabs='<div class="a972-top-tabs"><button data-a972-invtab="bag" class="'+(A972_INV_TAB==='bag'?'active':'')+'">背包</button><button data-a972-invtab="equip" class="'+(A972_INV_TAB==='equip'?'active':'')+'">裝備欄</button></div>';
-    let body='';
-    if(A972_INV_TAB==='equip'){
-      body='<div class="a972-panel">'+tabs+a972EquipmentHtml()+'</div>';
-    }else{
-      const filters='<div class="a972-filter-tabs">'+[['all','全部 ⇅'],['wpn','武器'],['arm','防具'],['item','道具']].map(([k,n])=>'<button data-a972-filter="'+k+'" class="'+(A972_INV_FILTER===k?'active':'')+'">'+n+'</button>').join('')+'</div>';
-      const rows=all.filter(v=>A972_INV_FILTER==='all'||a972ItemCategory(v.id)===A972_INV_FILTER);
-      const grid=rows.length?'<div class="a972-bag-grid">'+rows.map(a9930Card).join('')+'</div>':'<div class="a972-empty">目前沒有符合分類的物品。</div>';
-      body='<div class="a972-panel">'+tabs+filters+'<div class="a9930-stack-note"><b>強化分堆：</b>+0、+1、+2…各自獨立；相同強化值且相同特殊屬性的裝備才會疊在一起。</div>'+grid+
-        '<div class="a972-subtools"><button data-a972-open-autosell>掛機自動賣出設定</button><span>鎖定物品、強化／詞綴裝備與補給品依既有規則保護。</span></div></div>';
-    }
-    return '<section class="a9816-workspace a9816-inventory">'+a9930Head(all)+body+'</section>';
-  }
-
-  // 關鍵修正：不再只 monkey-patch row/card；直接接管實際背包 HTML 與 drawer 入口。
-  a972InventoryHtml=a9930InventoryHtml;
-  try{a8InventoryHtml=a9930InventoryHtml}catch(e){}
-  const a9930DrawerBase=drawerHtml;
-  drawerHtml=function(which){
-    if(which==='inventory'&&state)return a9930InventoryHtml();
-    return a9930DrawerBase.apply(this,arguments);
-  };
-
-  function a9930Probe(){
-    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail}),snap=state?JSON.parse(JSON.stringify(state)):null;
-    try{
-      if(typeof a76TestReset==='function')a76TestReset('knight',50);
-      state.inventory={wpn_1:7};state.gearInventoryMeta={};a16EnsureEnhanceState();
-      a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{bless:true});
-      A972_INV_TAB='bag';A972_INV_FILTER='all';
-      const vs=a9930Variants().filter(v=>v.id==='wpn_1'),html=a9930InventoryHtml(),groups=vs.map(v=>({en:Number(v.meta?.en||0),count:Number(v.count||0),affix:v.meta?.affix||{}}));
-      add('實際背包 renderer 分成 +0/+1/+2 群',groups.some(x=>x.en===0&&x.count===2)&&groups.some(x=>x.en===1&&x.count===2)&&groups.filter(x=>x.en===2).length===2,{groups});
-      add('實際 drawer 使用新版分堆 renderer',drawerHtml('inventory').includes('a9930-stack-note')&&drawerHtml('inventory').includes('data-a9930-en="1"'),{});
-      add('強化角標實際輸出',html.includes('>+1<')&&html.includes('>+2<'),{});
-      add('同強化同屬性會堆疊',groups.some(x=>x.en===1&&x.count===2),{groups});
-    }catch(e){add('Alpha99.30 probe exception',false,{error:String(e?.stack||e)})}
-    finally{if(snap){state=snap;try{derive();render()}catch(e){}}}
-    return{ok:rows.every(x=>x.ok),build:A9930_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
-  }
-
-  const a9930RenderBase=render;render=function(){const r=a9930RenderBase.apply(this,arguments);a9930ApplyVersion();return r};
-  if(typeof a46ShowLogin==='function'){const base=a46ShowLogin;a46ShowLogin=function(){const r=base.apply(this,arguments);a9930ApplyVersion();return r}}
-  if(typeof a46ShowSlots==='function'){const base=a46ShowSlots;a46ShowSlots=function(){const r=base.apply(this,arguments);a9930ApplyVersion();return r}}
-  if(typeof a46OpenCreate==='function'){const base=a46OpenCreate;a46OpenCreate=function(){const r=base.apply(this,arguments);a9930ApplyVersion();return r}}
-  window.__A9930_TEST__={build:A9930_BUILD,variants:a9930Variants,inventoryHtml:a9930InventoryHtml,probe:a9930Probe,applyVersion:a9930ApplyVersion};
-  a9930ApplyVersion();
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',a9930ApplyVersion,{once:true});
-  window.addEventListener('load',a9930ApplyVersion,{once:true});
-})();
-</script>
-
-
-<script id="a9930-final-version-lock">
-(()=>{
-  const BUILD='B1.0 Alpha99.30';
-  function apply(){
-    window.__BUILD_VERSION__=BUILD;
-    try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+BUILD}catch(_e){}
-    const v=document.querySelector('#a46-login-screen .a46-version');if(v&&v.textContent!==BUILD)v.textContent=BUILD;
-    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=BUILD+' · 強化真正分堆';
-    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.30｜強化真正分堆＋圖示角標｜PC＋手機';
-  }
-  apply();
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply,{once:true});
-  window.addEventListener('load',apply,{once:true});
-  setTimeout(apply,0);setTimeout(apply,100);setTimeout(apply,500);
-})();
-</script>
-
 </body></html>
