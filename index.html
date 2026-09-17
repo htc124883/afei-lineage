@@ -33359,6 +33359,7 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
   };
 
   function a9929ApplyVersion(){
+    if(String(window.__BUILD_VERSION__||'').includes('Alpha99.30'))return;
     try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+A9929_BUILD}catch(_e){}
     const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9929_BUILD;
     const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9929_BUILD+' · 強化分堆＋角標';
@@ -33385,19 +33386,122 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
 </script>
 
 
-<script id="a9929-final-version-lock">
+<!-- ===== B1.0 Alpha99.30：真正分堆修正（直接接管背包渲染） ===== -->
+<style id="a9930-true-stack-style">
+.a972-item-card[data-a9930-en]:not([data-a9930-en="0"]){border-color:#9a7b31!important;box-shadow:inset 0 0 0 1px rgba(235,192,72,.18),inset 0 -9px 16px rgba(0,0,0,.18)!important}
+.a972-item-card[data-a9930-en]:not([data-a9930-en="0"]) .a972-item-count{color:#ffe27a!important}
+.a9930-stack-note{margin:6px 0 8px;padding:6px 8px;border:1px solid #4c4128;border-radius:5px;background:#151108;color:#bcae86;font-size:9px;line-height:1.45}
+.a9930-stack-note b{color:#f1d07a}
+</style>
+<script id="a9930-true-stack-patch">
 (()=>{
-  const BUILD='B1.0 Alpha99.29';
-  function apply(){
-    try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+BUILD}catch(_e){}
-    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=BUILD;
-    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=BUILD+' · 強化分堆＋角標';
-    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.29｜強化裝備分堆＋圖示強化值｜PC＋手機';
+  const A9930_BUILD='B1.0 Alpha99.30';
+
+  function a9930ApplyVersion(){
+    try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+A9930_BUILD}catch(_e){}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9930_BUILD;
+    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9930_BUILD+' · 強化真正分堆';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.30｜強化真正分堆＋圖示角標｜PC＋手機';
+    window.__BUILD_VERSION__=A9930_BUILD;
   }
-  window.__BUILD_VERSION__=BUILD;
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply,{once:true});else apply();
-  window.addEventListener('load',apply,{once:true});
-  setTimeout(apply,0);
+
+  function a9930Variants(){
+    try{
+      if(window.__A9929_TEST__?.variants)return window.__A9929_TEST__.variants();
+    }catch(e){}
+    return [];
+  }
+  function a9930Name(v){
+    const d=a8Item(v.id)||{n:v.id},m=v.meta||{};let n=d.n||v.id;
+    try{n=a16GearName(v.id,Number(m.en||0),m.affix||{})}catch(e){if(Number(m.en||0)>0)n='+'+Number(m.en||0)+' '+n}
+    if(m.seteff)n+='【'+m.seteff+'】';return n;
+  }
+  function a9930Icon(v){
+    try{if(window.__A9929_TEST__?.icon)return window.__A9929_TEST__.icon(v.id,v.meta||{},'a972-grid-icon')}catch(e){}
+    return a67ItemIconHtml(v.id,'a972-grid-icon');
+  }
+  function a9930Card(v){
+    const en=Math.max(0,Number(v?.meta?.en||0)),name=a9930Name(v),id=v.id;
+    return '<button class="a972-item-card '+(a972IsLocked(id)?'locked':'')+'" data-a972-item="'+escapeHtml(id)+'" data-a9929-variant="'+escapeHtml(v.token)+'" data-a9930-en="'+en+'" title="'+escapeHtml(name)+'">'+
+      a9930Icon(v)+
+      '<span class="a972-item-count">'+fmt(v.count)+'</span>'+
+      (a972IsLocked(id)?'<span class="a972-lock-mark">🔒</span>':'')+
+    '</button>';
+  }
+  function a9930Head(vs){
+    const qty=Object.values(state?.inventory||{}).reduce((a,b)=>a+Math.max(0,Number(b)||0),0),filled=A972_EQUIP_SLOTS.filter(([sl])=>state?.equipment?.[sl]).length;
+    return '<div class="a9816-work-head"><div><i>INVENTORY</i><b>背包／裝備</b></div><span>分組 <strong>'+fmt(vs.length)+'</strong></span><span>數量 <strong>'+fmt(qty)+'</strong></span><span>裝備 <strong>'+filled+'/'+A972_EQUIP_SLOTS.length+'</strong></span></div>';
+  }
+  function a9930InventoryHtml(){
+    a972EnsureState();
+    const all=a9930Variants();
+    const tabs='<div class="a972-top-tabs"><button data-a972-invtab="bag" class="'+(A972_INV_TAB==='bag'?'active':'')+'">背包</button><button data-a972-invtab="equip" class="'+(A972_INV_TAB==='equip'?'active':'')+'">裝備欄</button></div>';
+    let body='';
+    if(A972_INV_TAB==='equip'){
+      body='<div class="a972-panel">'+tabs+a972EquipmentHtml()+'</div>';
+    }else{
+      const filters='<div class="a972-filter-tabs">'+[['all','全部 ⇅'],['wpn','武器'],['arm','防具'],['item','道具']].map(([k,n])=>'<button data-a972-filter="'+k+'" class="'+(A972_INV_FILTER===k?'active':'')+'">'+n+'</button>').join('')+'</div>';
+      const rows=all.filter(v=>A972_INV_FILTER==='all'||a972ItemCategory(v.id)===A972_INV_FILTER);
+      const grid=rows.length?'<div class="a972-bag-grid">'+rows.map(a9930Card).join('')+'</div>':'<div class="a972-empty">目前沒有符合分類的物品。</div>';
+      body='<div class="a972-panel">'+tabs+filters+'<div class="a9930-stack-note"><b>強化分堆：</b>+0、+1、+2…各自獨立；相同強化值且相同特殊屬性的裝備才會疊在一起。</div>'+grid+
+        '<div class="a972-subtools"><button data-a972-open-autosell>掛機自動賣出設定</button><span>鎖定物品、強化／詞綴裝備與補給品依既有規則保護。</span></div></div>';
+    }
+    return '<section class="a9816-workspace a9816-inventory">'+a9930Head(all)+body+'</section>';
+  }
+
+  // 關鍵修正：不再只 monkey-patch row/card；直接接管實際背包 HTML 與 drawer 入口。
+  a972InventoryHtml=a9930InventoryHtml;
+  try{a8InventoryHtml=a9930InventoryHtml}catch(e){}
+  const a9930DrawerBase=drawerHtml;
+  drawerHtml=function(which){
+    if(which==='inventory'&&state)return a9930InventoryHtml();
+    return a9930DrawerBase.apply(this,arguments);
+  };
+
+  function a9930Probe(){
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail}),snap=state?JSON.parse(JSON.stringify(state)):null;
+    try{
+      if(typeof a76TestReset==='function')a76TestReset('knight',50);
+      state.inventory={wpn_1:7};state.gearInventoryMeta={};a16EnsureEnhanceState();
+      a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',1,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{});a16PoolPush('wpn_1',2,{bless:true});
+      A972_INV_TAB='bag';A972_INV_FILTER='all';
+      const vs=a9930Variants().filter(v=>v.id==='wpn_1'),html=a9930InventoryHtml(),groups=vs.map(v=>({en:Number(v.meta?.en||0),count:Number(v.count||0),affix:v.meta?.affix||{}}));
+      add('實際背包 renderer 分成 +0/+1/+2 群',groups.some(x=>x.en===0&&x.count===2)&&groups.some(x=>x.en===1&&x.count===2)&&groups.filter(x=>x.en===2).length===2,{groups});
+      add('實際 drawer 使用新版分堆 renderer',drawerHtml('inventory').includes('a9930-stack-note')&&drawerHtml('inventory').includes('data-a9930-en="1"'),{});
+      add('強化角標實際輸出',html.includes('>+1<')&&html.includes('>+2<'),{});
+      add('同強化同屬性會堆疊',groups.some(x=>x.en===1&&x.count===2),{groups});
+    }catch(e){add('Alpha99.30 probe exception',false,{error:String(e?.stack||e)})}
+    finally{if(snap){state=snap;try{derive();render()}catch(e){}}}
+    return{ok:rows.every(x=>x.ok),build:A9930_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+
+  const a9930RenderBase=render;render=function(){const r=a9930RenderBase.apply(this,arguments);a9930ApplyVersion();return r};
+  if(typeof a46ShowLogin==='function'){const base=a46ShowLogin;a46ShowLogin=function(){const r=base.apply(this,arguments);a9930ApplyVersion();return r}}
+  if(typeof a46ShowSlots==='function'){const base=a46ShowSlots;a46ShowSlots=function(){const r=base.apply(this,arguments);a9930ApplyVersion();return r}}
+  if(typeof a46OpenCreate==='function'){const base=a46OpenCreate;a46OpenCreate=function(){const r=base.apply(this,arguments);a9930ApplyVersion();return r}}
+  window.__A9930_TEST__={build:A9930_BUILD,variants:a9930Variants,inventoryHtml:a9930InventoryHtml,probe:a9930Probe,applyVersion:a9930ApplyVersion};
+  a9930ApplyVersion();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',a9930ApplyVersion,{once:true});
+  window.addEventListener('load',a9930ApplyVersion,{once:true});
 })();
 </script>
+
+
+<script id="a9930-final-version-lock">
+(()=>{
+  const BUILD='B1.0 Alpha99.30';
+  function apply(){
+    window.__BUILD_VERSION__=BUILD;
+    try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+BUILD}catch(_e){}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v&&v.textContent!==BUILD)v.textContent=BUILD;
+    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=BUILD+' · 強化真正分堆';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.30｜強化真正分堆＋圖示角標｜PC＋手機';
+  }
+  apply();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply,{once:true});
+  window.addEventListener('load',apply,{once:true});
+  setTimeout(apply,0);setTimeout(apply,100);setTimeout(apply,500);
+})();
+</script>
+
 </body></html>
