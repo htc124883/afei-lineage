@@ -1344,7 +1344,7 @@ function a11SkillsHtml(){
     '<label class="a11-check"><span>自動喝加速藥水</span><input type="checkbox" data-a11-auto="haste" '+(state.autoCombat.haste?'checked':'')+'></label>'+
     '<label class="a11-check"><span>自動喝藍色藥水</span><input type="checkbox" data-a11-auto="blue" '+(state.autoCombat.blue?'checked':'')+'></label>'+
     '<label class="a11-field"><span>自動攻擊技能</span><select data-a11-auto-val="attackSkill">'+opts+'</select></label>'+
-    '<label class="a11-field"><span>保留 MP</span><select data-a11-auto-val="mpReserve">'+[0,20,30,40,50].map(v=>'<option value="'+v+'" '+(state.autoCombat.mpReserve===v?'selected':'')+'>'+v+'%</option>').join('')+'</select></label>'+
+    '<label class="a11-field"><span>保留 MP</span><select data-a11-auto-val="attackMpMin">'+[0,20,30,40,50].map(v=>'<option value="'+v+'" '+(Number(state.autoCombat.attackMpMin??state.autoCombat.mpReserve)===v?'selected':'')+'>'+v+'%</option>').join('')+'</select></label>'+
     '</div></div><div class="a11-skill-list">'+rows+'</div>';
 }
 const _a11DrawerHtml=drawerHtml;
@@ -1382,7 +1382,7 @@ function a11Auto(now){
   if(state.autoCombat.haste&&!a8BuffOn('haste')&&a8Count('potion_haste')>0){if(a11AutoUseItem('potion_haste'))return}
   if(state.autoCombat.blue&&!a8BuffOn('blue')&&a8Count('potion_blue')>0){if(a11AutoUseItem('potion_blue'))return}
   const sid=state.autoCombat.attackSkill,sk=DATA.skills?.[sid];
-  if(sid&&sk&&state.learnedSkills.includes(sid)&&mpPct>state.autoCombat.mpReserve&&state.player.mp>=Number(sk.mp||0))a11Cast(sid,true);
+  if(sid&&sk&&state.learnedSkills.includes(sid)&&mpPct>Number(state.autoCombat.attackMpMin??state.autoCombat.mpReserve??0)&&state.player.mp>=Number(sk.mp||0))a11Cast(sid,true);
 }
 function a11PoisonTick(){
   const now=Date.now();
@@ -10850,7 +10850,7 @@ a11SkillsHtml=function(){
  '<label class="a11-check"><span>自動喝加速藥水</span><input type="checkbox" data-a11-auto="haste" '+(state.autoCombat.haste?'checked':'')+'></label>'+ 
  '<label class="a11-check"><span>自動喝藍色藥水</span><input type="checkbox" data-a11-auto="blue" '+(state.autoCombat.blue?'checked':'')+'></label>'+ 
  '<label class="a11-field"><span>自動攻擊技能</span><select data-a11-auto-val="attackSkill">'+opts+'</select></label>'+ 
- '<label class="a11-field"><span>保留 MP</span><select data-a11-auto-val="mpReserve">'+[0,20,30,40,50].map(v=>'<option value="'+v+'" '+(state.autoCombat.mpReserve===v?'selected':'')+'>'+v+'%</option>').join('')+'</select></label>'+ 
+ '<label class="a11-field"><span>保留 MP</span><select data-a11-auto-val="attackMpMin">'+[0,20,30,40,50].map(v=>'<option value="'+v+'" '+(Number(state.autoCombat.attackMpMin??state.autoCombat.mpReserve)===v?'selected':'')+'>'+v+'%</option>').join('')+'</select></label>'+ 
  '</div></div><div class="a66-skill-list">'+rows+'</div>';
 };
 
@@ -15094,6 +15094,9 @@ function a97EnsureState(){
   if(typeof a.cautious!=='boolean')a.cautious=false;
   if(typeof a.poly!=='boolean')a.poly=false;
   if(typeof a.healSkillId!=='string')a.healSkillId='auto';
+  // Alpha99.24：藥水與治療魔法使用獨立 HP 門檻。舊存檔第一次轉入時沿用原 healPct。
+  if(typeof a.healSkillPct!=='number')a.healSkillPct=Math.max(10,Math.min(90,Number(a.healPct||50)));
+  a.healSkillPct=Math.max(10,Math.min(90,Number(a.healSkillPct)||50));
   if(typeof a.polyFormName!=='string')a.polyFormName='';
   if(!a.autoRestock||typeof a.autoRestock!=='object'||Array.isArray(a.autoRestock))a.autoRestock={};
   for(const id of A97_RESTOCK_ITEMS)if(typeof a.autoRestock[id]!=='boolean')a.autoRestock[id]=false;
@@ -15161,7 +15164,7 @@ function a97AutoPanelHtml(){
     '</div><div class="a97-ammo">目前選用箭矢：'+escapeHtml(a8Item(ammo)?.n||'未選用')+' ×'+fmt(ammo?a8Count(ammo):0)+'</div>'+
     '<div class="a97-section-title">攻擊技能</div><div class="a11-auto-grid">'+
       '<label class="a11-field"><span>自動攻擊技能</span><select data-a11-auto-val="attackSkill">'+(function(){const atk=a97OwnedSkillIds().map(id=>[id,DATA.skills[id]]).filter(([,sk])=>sk?.type==='atk');return '<option value="">不使用</option>'+atk.map(([id,sk])=>'<option value="'+escapeHtml(id)+'" '+(a.attackSkill===id?'selected':'')+'>'+escapeHtml(sk.n)+'</option>').join('')})()+'</select></label>'+
-      '<label class="a11-field"><span>保留 MP</span><select data-a11-auto-val="mpReserve">'+[0,20,30,40,50].map(v=>'<option value="'+v+'" '+(a.mpReserve===v?'selected':'')+'>'+v+'%</option>').join('')+'</select></label>'+
+      '<label class="a11-field"><span>保留 MP</span><select data-a11-auto-val="attackMpMin">'+[0,20,30,40,50].map(v=>'<option value="'+v+'" '+(Number(a.attackMpMin??a.mpReserve)===v?'selected':'')+'>'+v+'%</option>').join('')+'</select></label>'+
     '</div></div>';
 }
 
@@ -15227,17 +15230,16 @@ function a97AutoPoly(){
 a11Auto=function(now){
   if(!state?.running||a7IsVillage()||now<a11AutoAt)return;a11AutoAt=now+550;a97EnsureState();a97RestockSweep(now);
   const a=state.autoCombat,hpPct=100*state.player.hp/Math.max(1,state.player.maxHp),mpPct=100*state.player.mp/Math.max(1,state.player.maxMp);
-  if(hpPct<=a.healPct){
-    if(a.healSkill){const sid=a97SelectedHealSkill();if(sid&&a11Cast(sid,true))return}
-    if(a.heal){const pid=a11BestPotion();if(pid&&a11AutoUseItem(pid))return}
-  }
+  // Alpha99.24：治療魔法與治癒藥水各自判斷，不再共用 healPct。
+  if(a.healSkill&&hpPct<=Number(a.healSkillPct||50)){const sid=a97SelectedHealSkill();if(sid&&a11Cast(sid,true))return}
+  if(a.heal&&hpPct<=Number(a.healPct||50)){const pid=a11BestPotion();if(pid&&a11AutoUseItem(pid))return}
   if(a.haste&&!a8BuffOn('haste')&&a8Count('potion_haste')>0){if(a11AutoUseItem('potion_haste'))return}
   if(a.blue&&!a8BuffOn('blue')&&a8Count('potion_blue')>0){if(a11AutoUseItem('potion_blue'))return}
   if(a97AutoSimpleBuff('potion_brave','brave','brave'))return;
   if(a97AutoSimpleBuff('new_item_139','cookie','elfcookie'))return;
   if(a97AutoSimpleBuff('new_item_140','cautious','cautious'))return;
   if(a97AutoPoly())return;
-  const sid=a.attackSkill,sk=DATA.skills?.[sid];if(sid&&sk&&(typeof a82OwnsSkill==='function'?a82OwnsSkill(sid):state.learnedSkills.includes(sid))&&mpPct>a.mpReserve&&state.player.mp>=Number(sk.mp||0))a11Cast(sid,true);
+  const sid=a.attackSkill,sk=DATA.skills?.[sid];if(sid&&sk&&(typeof a82OwnsSkill==='function'?a82OwnsSkill(sid):state.learnedSkills.includes(sid))&&mpPct>Number(a.attackMpMin??a.mpReserve??0)&&state.player.mp>=Number(sk.mp||0))a11Cast(sid,true);
 };
 
 // 慎重藥水：依既有物品資料「魔法傷害+2、MP恢復+2」實際生效。
@@ -15355,7 +15357,7 @@ function a971LinkRestockFromAutoUse(){
 function a971EnsureSellState(){
   if(!state)return;
   a97EnsureState();
-  a971LinkRestockFromAutoUse();
+  // Alpha99.25：自動販賣 ensure 不再碰自動補貨設定。
   if(!state.autoSell||typeof state.autoSell!=='object'||Array.isArray(state.autoSell))state.autoSell={};
   const a=state.autoSell;
   if(typeof a.enabled!=='boolean')a.enabled=false;
@@ -15508,14 +15510,14 @@ bindDrawer=function(root){
     const prev=e.onchange;e.onchange=()=>{
       if(typeof prev==='function')prev.call(e);
       a97EnsureState();const a=state.autoCombat,map={heal:A97_HEAL_POTIONS.includes(a.healPotion)?a.healPotion:'potion_heal',haste:'potion_haste',blue:'potion_blue',brave:'potion_brave',cookie:'new_item_139',cautious:'new_item_140',poly:'scroll_poly'};
-      const id=map[e.dataset.a97Bool];if(e.checked&&id&&a.autoRestock&&Object.prototype.hasOwnProperty.call(a.autoRestock,id))a.autoRestock[id]=true;
+      const id=map[e.dataset.a97Bool]; /* Alpha99.25：自動使用與自動購買完全獨立，不再偷偷開啟補貨。 */
       save();try{renderDrawers()}catch(_e){}
     };
   });
   root.querySelectorAll('[data-a97-string="healPotion"]').forEach(e=>{
     const prev=e.onchange;e.onchange=()=>{
       if(typeof prev==='function')prev.call(e);
-      a97EnsureState();if(state.autoCombat.heal&&A97_HEAL_POTIONS.includes(state.autoCombat.healPotion))state.autoCombat.autoRestock[state.autoCombat.healPotion]=true;
+      a97EnsureState(); /* Alpha99.25：切換治癒藥水種類不再改動自動補貨開關。 */
       save();try{renderDrawers()}catch(_e){}
     };
   });
@@ -26945,6 +26947,8 @@ body.a9867-current-hunt #battle>.mobile-start{display:none!important}
     if(typeof a.openSkill!=='string')a.openSkill='';
     if(typeof a.openMpMin!=='number')a.openMpMin=50;
     if(typeof a.attackMpMin!=='number')a.attackMpMin=Number(a.mpReserve??50);
+    if(typeof a.healSkillPct!=='number')a.healSkillPct=Math.max(10,Math.min(90,Number(a.healPct||50)));
+    a.healSkillPct=Math.max(10,Math.min(90,Number(a.healSkillPct)||50));
     if(typeof a.convertSkill!=='string')a.convertSkill='';
     if(typeof a.convertHpMin!=='number')a.convertHpMin=50;
     if(typeof a.convertMpMax!=='number')a.convertMpMax=30;
@@ -26953,8 +26957,7 @@ body.a9867-current-hunt #battle>.mobile-start{display:none!important}
     a.attackMpMin=Math.max(0,Math.min(100,Number(a.attackMpMin)||0));
     a.convertHpMin=Math.max(0,Math.min(100,Number(a.convertHpMin)||0));
     a.convertMpMax=Math.max(0,Math.min(100,Number(a.convertMpMax)||0));
-    // 相容舊版 mpReserve：新版 UI 的「MP >」直接同步到舊攻擊技能門檻。
-    a.mpReserve=a.attackMpMin;
+    // Alpha99.25：mpReserve 只作舊存檔來源，不再與 attackMpMin 雙向同步。
   }
   function ownedRows(type){
     ensure68();
@@ -26990,15 +26993,15 @@ body.a9867-current-hunt #battle>.mobile-start{display:none!important}
     ensure68();const a=state.autoCombat;
     const selectedPotion=a.healPotion||'potion_heal';
     return '<div class="a9868-auto">'+
-      '<div class="a9868-card"><div class="a9868-row top"><label class="a9868-select"><select data-a9868-string="healPotion">'+potionOptions()+'</select></label><span>HP &lt;</span><select data-a9868-num="healPct">'+pctOptions(a.healPct)+'</select><span>%</span></div>'+ 
+      '<div class="a9868-card"><div class="a9868-row top"><label class="a9868-select"><select data-a9868-string="healPotion">'+potionOptions()+'</select></label><span>HP &lt;</span><input class="a9925-pct" type="number" inputmode="numeric" min="10" max="90" step="1" data-a9868-num="healPct" value="'+Number(a.healPct||50)+'"><span>%</span></div>'+ 
       '<label class="a9868-check"><input type="checkbox" data-a9868-flag="heal" '+(a.heal?'checked':'')+'> 自動喝治癒藥水</label>'+ 
       '<label class="a9868-check"><input type="checkbox" data-a9868-restock="'+selectedPotion+'" '+(a.autoRestock?.[selectedPotion]?'checked':'')+'> 背包藥水用完前自動購買</label></div>'+ 
       '<div class="a9868-card"><h4>自動施放設定</h4>'+ 
-        '<div class="a9868-skillline opener"><b>開怪技能</b><span>MP &gt;</span><select data-a9868-num="openMpMin">'+pctOptions(a.openMpMin,[0,20,30,40,50,60,70,80])+'</select><span>%</span><select class="wide" data-a9868-string="openSkill">'+skillOptions('atk',a.openSkill,'無')+'</select></div>'+ 
-        '<div class="a9868-skillline attack"><b>攻擊技能</b><span>MP &gt;</span><select data-a9868-num="attackMpMin">'+pctOptions(a.attackMpMin,[0,20,30,40,50,60,70,80])+'</select><span>%</span><select class="wide" data-a9868-string="attackSkill">'+skillOptions('atk',a.attackSkill,'無')+'</select></div>'+ 
-        '<div class="a9868-skillline heal"><b>治療魔法</b><span>HP &lt;</span><select data-a9868-num="healPct">'+pctOptions(a.healPct)+'</select><span>%</span><select class="wide" data-a9868-string="healSkillId">'+healOptions()+'</select></div>'+ 
+        '<div class="a9868-skillline opener"><b>開怪技能</b><span>MP &gt;</span><input class="a9925-pct" type="number" inputmode="numeric" min="0" max="100" step="1" data-a9868-num="openMpMin" value="'+Number(a.openMpMin||0)+'"><span>%</span><select class="wide" data-a9868-string="openSkill">'+skillOptions('atk',a.openSkill,'無')+'</select></div>'+ 
+        '<div class="a9868-skillline attack"><b>攻擊技能</b><span>MP &gt;</span><input class="a9925-pct" type="number" inputmode="numeric" min="0" max="100" step="1" data-a9868-num="attackMpMin" value="'+Number(a.attackMpMin||0)+'"><span>%</span><select class="wide" data-a9868-string="attackSkill">'+skillOptions('atk',a.attackSkill,'無')+'</select></div>'+ 
+        '<div class="a9868-skillline heal"><b>治療魔法</b><span>HP &lt;</span><input class="a9925-pct" type="number" inputmode="numeric" min="10" max="90" step="1" data-a9868-num="healSkillPct" value="'+Number(a.healSkillPct||50)+'"><span>%</span><select class="wide" data-a9868-string="healSkillId">'+healOptions()+'</select></div>'+ 
         '<label class="a9868-check compact"><input type="checkbox" data-a9868-flag="healSkill" '+(a.healSkill?'checked':'')+'> 啟用自動治療魔法</label>'+ 
-        '<div class="a9868-skillline convert"><b>轉換魔法</b><span>HP &gt;</span><select data-a9868-num="convertHpMin">'+pctOptions(a.convertHpMin,[20,30,40,50,60,70,80,90])+'</select><span>%　MP &lt;</span><select data-a9868-num="convertMpMax">'+pctOptions(a.convertMpMax,[10,20,30,40,50,60])+'</select><span>%</span><select class="wide" data-a9868-string="convertSkill">'+skillOptions('convert',a.convertSkill,'無')+'</select></div>'+ 
+        '<div class="a9868-skillline convert"><b>轉換魔法</b><span>HP &gt;</span><input class="a9925-pct" type="number" inputmode="numeric" min="0" max="100" step="1" data-a9868-num="convertHpMin" value="'+Number(a.convertHpMin||0)+'"><span>%　MP &lt;</span><input class="a9925-pct" type="number" inputmode="numeric" min="0" max="100" step="1" data-a9868-num="convertMpMax" value="'+Number(a.convertMpMax||0)+'"><span>%</span><select class="wide" data-a9868-string="convertSkill">'+skillOptions('convert',a.convertSkill,'無')+'</select></div>'+ 
         '<p class="a9868-note">開怪技能只在新的怪物目標首次接戰時施放一次；攻擊技能依 MP 門檻循環施放。技能清單只顯示目前角色已學會且符合等級／妖精屬性的技能。</p>'+ 
       '</div>'+ 
       '<div class="a9868-card"><h4>自動化技能（狀態）</h4><div class="a9868-buffs">'+buffRows()+'</div></div>'+ 
@@ -27034,7 +27037,7 @@ body.a9867-current-hunt #battle>.mobile-start{display:none!important}
     root.querySelectorAll('[data-a9868-restock]').forEach(c=>c.onchange=()=>{ensure68();state.autoCombat.autoRestock[c.dataset.a9868Restock]=!!c.checked;save()});
     root.querySelectorAll('[data-a9868-buff]').forEach(c=>c.onchange=()=>{ensure68();state.autoCombat.autoBuffSkills[c.dataset.a9868Buff]=!!c.checked;save()});
     root.querySelectorAll('[data-a9868-string]').forEach(e=>e.onchange=()=>{ensure68();state.autoCombat[e.dataset.a9868String]=e.value;if(e.dataset.a9868String==='attackSkill')state.autoCombat.attackSkill=e.value;save();if(e.dataset.a9868String==='healPotion')try{renderDrawers()}catch(_e){}});
-    root.querySelectorAll('[data-a9868-num]').forEach(e=>e.onchange=()=>{ensure68();const k=e.dataset.a9868Num,v=Math.max(0,Math.min(100,Number(e.value)||0));state.autoCombat[k]=v;if(k==='attackMpMin')state.autoCombat.mpReserve=v;save()});
+    root.querySelectorAll('[data-a9868-num]').forEach(e=>{const commit=()=>{ensure68();const k=e.dataset.a9868Num,min=Number.isFinite(Number(e.min))?Number(e.min):0,max=Number.isFinite(Number(e.max))?Number(e.max):100,prev=Number(state.autoCombat[k]??0);let raw=String(e.value??'').trim();let v=raw===''?prev:Number(raw);if(!Number.isFinite(v))v=prev;v=Math.max(min,Math.min(max,Math.round(v)));state.autoCombat[k]=v;e.value=String(v);save()};e.onchange=commit;e.onblur=commit;e.onkeydown=ev=>{if(ev.key==='Enter'){commit();e.blur()}}});
     const as=root.querySelector('[data-a9868-open-autosell]');if(as)as.onclick=()=>{if(typeof a972AutoSellPopup==='function')a972AutoSellPopup()};
   };
 
@@ -32380,6 +32383,420 @@ a9921ApplyVersion();
 window.__A9921_TEST__={build:A9921_BUILD,strDmg:a9921StrDmg,strHit:a9921StrHit,dexDmg:a9921DexDmg,dexHit:a9921DexHit,dexEr:a9921DexEr,dexAcStep:a9921DexAcStep,conRegen:a9921ConRegen,wisMr:a9921WisMr,wisRegen:a9921WisRegen,weightCap:a9921WeightCap,growthAvg:a9921GrowthAvg,growthMax:a9921GrowthMax,snapshot:a9921SourceStatSnapshot,audit:a9921Audit,probe:a9921Probe,previous:window.__A9920_TEST__};
 
 
+})();
+
+// ===== Alpha99.22：倉庫存取後固定視窗與捲動位置 =====
+const A9922_BUILD='B1.0 Alpha99.22';
+(()=>{
+function a9922WhScroll(box=document.getElementById('village-action')){return box?.querySelector(':scope > .a9846-npc-scroll')||box||null}
+function a9922WhCapture(box=document.getElementById('village-action')){
+  const sc=a9922WhScroll(box),ae=document.activeElement,row=ae?.closest?.('.a7-wh-row,.a34-wh-row');
+  let dir='',id='';
+  if(ae?.dataset){
+    for(const [k,d] of [['a7Win','in'],['a7Wout','out'],['a34Win','in'],['a34Wout','out'],['a9844Win','in'],['a9844Wout','out']])if(ae.dataset[k]){dir=d;id=ae.dataset[k];break}
+  }
+  return{
+    open:!!box?.classList.contains('a972-open'),top:Number(sc?.scrollTop||0),left:Number(sc?.scrollLeft||0),
+    gold:String(box?.querySelector('#a7-wh-gold,#a34-wh-gold')?.value||''),dir,id,
+    label:String(row?.querySelector('b')?.textContent||'').trim(),
+    rowRel:row&&sc?row.getBoundingClientRect().top-sc.getBoundingClientRect().top:null,
+    boxTop:Number(box?.getBoundingClientRect().top||0)
+  }
+}
+function a9922FindAnchor(sc,snap){
+  if(!sc||!snap)return null;let b=null;
+  if(snap.id){
+    const esc=(window.CSS&&CSS.escape)?CSS.escape(snap.id):String(snap.id).replace(/["\\]/g,'\\$&');
+    const sels=snap.dir==='in'?[`[data-a7-win="${esc}"]`,`[data-a34-win="${esc}"]`,`[data-a9844-win="${esc}"]`]:[`[data-a7-wout="${esc}"]`,`[data-a34-wout="${esc}"]`,`[data-a9844-wout="${esc}"]`];
+    for(const sel of sels){try{b=sc.querySelector(sel)}catch(e){}if(b)break}
+  }
+  if(!b&&snap.label){for(const r of sc.querySelectorAll('.a7-wh-row,.a34-wh-row')){if(String(r.querySelector('b')?.textContent||'').trim()===snap.label){const q=snap.dir==='out'?'[data-a7-wout],[data-a34-wout],[data-a9844-wout]':'[data-a7-win],[data-a34-win],[data-a9844-win]';if(r.querySelector(q)){b=r.querySelector(q);break}}}}
+  return b?.closest('.a7-wh-row,.a34-wh-row')||null
+}
+function a9922EnsureWarehouseShell(npc,snap){
+  const box=document.getElementById('village-action');if(!box||!state||!a7IsVillage())return false;
+  if(npc?.id)state._a7NpcId=npc.id;box.classList.add('a972-open');
+  // 倉庫 renderer 會 innerHTML 重畫整個 box；先自行補回關閉鍵，避免呼叫 a972ShowNpcAction 再排一個延遲 decorator 造成第二次跳動。
+  if(!box.querySelector(':scope > .a972-npc-close')){const c=document.createElement('button');c.className='a972-npc-close';c.textContent='關閉';c.onclick=()=>a972CloseNpcAction();box.appendChild(c)}
+  try{a9846DecorateNpc()}catch(e){console.error('Alpha99.22 warehouse redecorate',e)}
+  const sc=a9922WhScroll(box);if(!sc)return false;
+  if(snap?.gold){const gi=box.querySelector('#a7-wh-gold,#a34-wh-gold');if(gi)gi.value=snap.gold}
+  sc.scrollTop=Math.max(0,Number(snap?.top)||0);sc.scrollLeft=Math.max(0,Number(snap?.left)||0);
+  // 若重畫使上方列數改變，優先鎖住原本點擊那一列在視窗中的相對位置。
+  const row=a9922FindAnchor(sc,snap);if(row&&snap?.rowRel!=null){const rel=row.getBoundingClientRect().top-sc.getBoundingClientRect().top;const delta=rel-Number(snap.rowRel);if(Math.abs(delta)>0.5)sc.scrollTop=Math.max(0,sc.scrollTop+delta)}
+  return !!(box.classList.contains('a972-open')&&box.querySelector(':scope > .a9846-npc-head')&&box.querySelector(':scope > .a9846-npc-scroll')&&box.querySelectorAll(':scope > .a972-npc-close').length===1)
+}
+function a9922WrapWarehouseRenderer(base){
+  return function(npc){
+    const box=document.getElementById('village-action'),active=!!box?.classList.contains('a972-open'),snap=a9922WhCapture(box);
+    const r=base.apply(this,arguments);
+    if(active){
+      // microtask 在下一次 paint 前恢復；再於 rAF 校正一次，避免手機 reflow 後 1~2px 漂移。
+      queueMicrotask(()=>{a9922EnsureWarehouseShell(npc,snap);requestAnimationFrame(()=>{const sc=a9922WhScroll();if(sc&&!document.hidden){const row=a9922FindAnchor(sc,snap);if(row&&snap.rowRel!=null){const rel=row.getBoundingClientRect().top-sc.getBoundingClientRect().top;const d=rel-Number(snap.rowRel);if(Math.abs(d)>1)sc.scrollTop=Math.max(0,sc.scrollTop+d)}}})});
+    }
+    return r;
+  }
+}
+const a9922WhBase=a7RenderWarehouse;a7RenderWarehouse=a9922WrapWarehouseRenderer(a9922WhBase);
+const a9922TalkWhBase=a34RenderTalkingWarehouse;a34RenderTalkingWarehouse=a9922WrapWarehouseRenderer(a9922TalkWhBase);
+
+// 一般倉庫舊路徑存取後會 a7OpenNpc()，而開 NPC 的多層 wrapper 會再排 0/20ms 的 show/decorate，
+// 最後把剛恢復的 scrollTop 又洗回 0。這裡只改重畫入口，交易資料規則完全沿用原本 A7 倉庫。
+a7WhMove=function(id,dir){
+  const w=a7WhLoad();if(dir==='in'){if((state.inventory[id]||0)<1)return false;state.inventory[id]--;if(state.inventory[id]<=0)delete state.inventory[id];w.items[id]=(w.items[id]||0)+1}else{if((w.items[id]||0)<1)return false;w.items[id]--;if(w.items[id]<=0)delete w.items[id];state.inventory[id]=(state.inventory[id]||0)+1}
+  a7WhSave(w);save();const npc=a7Town()?.npcs?.find(n=>String(n.id)===String(state?._a7NpcId||''));if(npc)a7RenderWarehouse(npc);return true
+};
+a7WhGold=function(dir,amt){
+  amt=Math.max(1,Math.floor(Number(amt)||0));const w=a7WhLoad();if(dir==='in'){if(state.player.gold<amt){toast('金幣不足');return false}state.player.gold-=amt;w.gold+=amt}else{if(w.gold<amt){toast('倉庫金幣不足');return false}w.gold-=amt;state.player.gold+=amt}
+  a7WhSave(w);save();renderHUDDynamic();const npc=a7Town()?.npcs?.find(n=>String(n.id)===String(state?._a7NpcId||''));if(npc)a7RenderWarehouse(npc);return true
+};
+
+function a9922FindRegularWarehouse(){
+  for(const [townId,t] of Object.entries(DATA.towns||{}))for(const npc of(t.npcs||[]))if(npc.id!=='npc_wh_talking'&&((typeof a72Route==='function'&&a72Route(townId,npc)==='warehouse')||npc.type==='warehouse'))return{townId,npc};
+  return null;
+}
+function a9922SeedInventory(count=45){
+  // 測試使用純堆疊道具，避免裝備 meta 遷移干擾「畫面會不會跳」這個單一測試目的。
+  const ids=Object.keys(DATA.items||{}).filter(id=>/^(potion_|scroll_|new_item_)/.test(id)&&DATA.items?.[id]).slice(0,count);state.inventory={};for(const id of ids)state.inventory[id]=3;state.gearInventoryMeta={};return ids
+}
+async function a9922OneProbe(kind){
+  const isTalk=kind==='talking',f=isTalk?{townId:'town_talking',npc:DATA.towns?.town_talking?.npcs?.find(n=>n.id==='npc_wh_talking')}:a9922FindRegularWarehouse();
+  if(!f?.npc)return{ok:false,error:'找不到 '+kind+' 倉庫'};
+  localStorage.removeItem(isTalk?A34_WH_KEY:A7_WH_KEY);a76TestReset('knight',60);a9922SeedInventory();state.inVillage=true;state.mapId=f.townId;state.mobs=[];state._a7NpcId=f.npc.id;render();
+  if(isTalk)a34RenderTalkingWarehouse(f.npc);else a7RenderWarehouse(f.npc);a972ShowNpcAction();try{a9846DecorateNpc()}catch(e){}
+  // 初次開啟本來就有舊 UI 的 0/20ms 裝飾排程；先等它全部收斂，再測真正使用中的捲動位置。
+  await new Promise(r=>setTimeout(r,40));let box=document.getElementById('village-action'),sc=a9922WhScroll(box);if(!sc)return{ok:false,error:'缺 scroll'};
+  sc.scrollTop=Math.min(420,Math.max(0,sc.scrollHeight-sc.clientHeight-20));await new Promise(r=>requestAnimationFrame(()=>r()));box=document.getElementById('village-action');sc=a9922WhScroll(box);
+  const beforeTop=sc.scrollTop,beforeBoxTop=box.getBoundingClientRect().top;
+  const sel=isTalk?'[data-a34-win],[data-a9844-win]':'[data-a7-win]';let btn=[...sc.querySelectorAll(sel)].find(x=>{const a=x.getBoundingClientRect(),b=sc.getBoundingClientRect();return a.top>b.top+15&&a.bottom<b.bottom-15});if(!btn)btn=sc.querySelector(sel);if(!btn)return{ok:false,error:'缺存入按鈕'};
+  const row=btn.closest('.a7-wh-row,.a34-wh-row'),label=String(row?.querySelector('b')?.textContent||''),beforeRel=row?row.getBoundingClientRect().top-sc.getBoundingClientRect().top:null;btn.click();
+  await new Promise(r=>setTimeout(r,40));await new Promise(r=>requestAnimationFrame(()=>r()));box=document.getElementById('village-action');sc=a9922WhScroll(box);
+  const rows=[...sc.querySelectorAll('.a7-wh-row,.a34-wh-row')],same=rows.find(r=>String(r.querySelector('b')?.textContent||'')===label),afterRel=same?same.getBoundingClientRect().top-sc.getBoundingClientRect().top:null;
+  const afterTop=Number(sc?.scrollTop||0),shell=!!box?.querySelector(':scope > .a9846-npc-head')&&!!box?.querySelector(':scope > .a9846-npc-scroll')&&box?.querySelectorAll(':scope > .a972-npc-close').length===1,boxStable=Math.abs(box.getBoundingClientRect().top-beforeBoxTop)<1.5,scrollStable=Math.abs(afterTop-beforeTop)<2.5||(beforeRel!=null&&afterRel!=null&&Math.abs(afterRel-beforeRel)<2.5);
+  return{ok:shell&&boxStable&&scrollStable,kind,beforeTop,afterTop,beforeRel,afterRel,shell,boxStable,scrollStable,open:box.classList.contains('a972-open')};
+}
+async function a9922Probe(){
+  const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,oldA7=localStorage.getItem(A7_WH_KEY),oldA34=localStorage.getItem(A34_WH_KEY),rows=[];
+  try{
+    const talking=await a9922OneProbe('talking');rows.push({name:'說話之島倉庫存入不跳動',ok:talking.ok,detail:talking});
+    const regular=await a9922OneProbe('regular');rows.push({name:'一般倉庫存入不跳動',ok:regular.ok,detail:regular});
+    const prev=window.__A9921_TEST__?.audit?.();rows.push({name:'Alpha99.21 能力值稽核',ok:prev?.ok===true,detail:{issues:prev?.issues||[]}});
+  }catch(e){rows.push({name:'Alpha99.22 probe exception',ok:false,detail:{error:String(e?.stack||e)}})}
+  finally{
+    try{if(oldA7===null)localStorage.removeItem(A7_WH_KEY);else localStorage.setItem(A7_WH_KEY,oldA7);if(oldA34===null)localStorage.removeItem(A34_WH_KEY);else localStorage.setItem(A34_WH_KEY,oldA34);if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){rows.push({name:'測試後還原',ok:false,detail:{error:String(e)}})}
+  }
+  return{ok:rows.every(x=>x.ok),build:A9922_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+}
+function a9922Audit(){const src1=String(a7RenderWarehouse),src2=String(a34RenderTalkingWarehouse),issues=[];if(!src1.includes('a9922EnsureWarehouseShell'))issues.push('一般倉庫未包穩定層');if(!src2.includes('a9922EnsureWarehouseShell'))issues.push('說話之島倉庫未包穩定層');return{ok:issues.length===0,build:A9922_BUILD,issues}}
+function a9922ApplyVersion(){
+  try{document.title=A41_BRAND+' · '+A9922_BUILD}catch(e){document.title='樓梯口天堂 · '+A9922_BUILD}
+  const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9922_BUILD;
+  const note=document.querySelector('#a46-login-screen .a46-login-note');if(note){note.textContent='';note.style.display='none'}
+  const info=document.querySelector('#a55-login-info');if(info)info.style.display='none';
+  const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.22｜倉庫存取視窗穩定修正｜PC＋手機';
+}
+const a9922RenderBase=render;render=function(){const r=a9922RenderBase.apply(this,arguments);a9922ApplyVersion();return r};
+const a9922ShowLoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9922ShowLoginBase.apply(this,arguments);a9922ApplyVersion();return r};
+a9922ApplyVersion();
+window.__A9922_TEST__={build:A9922_BUILD,audit:a9922Audit,probe:a9922Probe,capture:a9922WhCapture,previous:window.__A9921_TEST__};
+})();
+
+// ===== Alpha99.23：倉庫單件＋整疊全存／全取 =====
+const A9923_BUILD='B1.0 Alpha99.23';
+(()=>{
+function a9923Qty(v,available){
+  const a=Math.max(0,Math.floor(Number(available)||0));if(a<1)return 0;
+  if(v==='all')return a;
+  return Math.max(1,Math.min(a,Math.floor(Number(v)||1)));
+}
+function a9923RegularAvailableIn(id){
+  const d=typeof a8Item==='function'?a8Item(id):DATA.items?.[id],total=Math.max(0,Math.floor(Number(state?.inventory?.[id]||0)));
+  if(d&&['wpn','arm','acc'].includes(d.type)&&!d.isArrow&&typeof a16PlainCount==='function')return Math.max(0,Math.floor(Number(a16PlainCount(id))||0));
+  return total;
+}
+// 一般村莊倉庫：amount 可為 1 / 數字 / 'all'。裝備只搬「普通實體」，避免特殊 meta 遺失。
+a7WhMove=function(id,dir,amount=1){
+  id=String(id||'');if(!id||!state)return false;const w=a7WhLoad();
+  if(dir==='in'){
+    const available=a9923RegularAvailableIn(id),q=a9923Qty(amount,available);
+    if(q<1){if(Number(state.inventory?.[id]||0)>0)toast('這個物品只剩強化／詞條版本，請使用可保留特殊資料的共用倉庫。');return false}
+    state.inventory[id]=Math.max(0,Number(state.inventory[id]||0)-q);if(state.inventory[id]<=0)delete state.inventory[id];w.items[id]=Math.max(0,Number(w.items[id]||0))+q;
+  }else{
+    const available=Math.max(0,Math.floor(Number(w.items?.[id]||0))),q=a9923Qty(amount,available);if(q<1)return false;
+    w.items[id]=available-q;if(w.items[id]<=0)delete w.items[id];state.inventory[id]=Math.max(0,Number(state.inventory[id]||0))+q;
+  }
+  a7WhSave(w);save();const npc=a7Town()?.npcs?.find(n=>String(n.id)===String(state?._a7NpcId||''));if(npc)a7RenderWarehouse(npc);return true;
+};
+
+// 說話之島共用倉庫：同款特殊裝備也能整疊存／取；不同強化、祝福、詞條仍分開。
+a9844WhDeposit=function(v,amount=1){
+  if(!state||!v?.id)return false;a16EnsureEnhanceState();const w=a34WhLoad(),max=50,id=String(v.id);
+  if(typeof a35IsCollar==='function'&&a35IsCollar(id)){try{a35EnsureState();state.a35.collarStoreBlocks++;save()}catch(e){}toast('新阿肥現行規則：項圈不可存入倉庫');return false}
+  if(v.kind==='plain'){
+    const plain=Math.max(0,a8Count(id)-a16SpecialCount(id)),q=a9923Qty(amount,plain);if(q<1)return false;
+    const newSlot=Number(w.items[id]||0)<=0;if(newSlot&&a34WhSlots(w)>=max){toast('現行倉庫道具空間已滿（50 格）');return false}
+    state.inventory[id]=Math.max(0,Number(state.inventory[id]||0)-q);if(state.inventory[id]<=0)delete state.inventory[id];w.items[id]=Math.max(0,Number(w.items[id]||0))+q;
+  }else{
+    const arr=Array.isArray(state.gearInventoryMeta?.[id])?state.gearInventoryMeta[id]:[],sig=a9844WhSig(id,v.meta),matches=arr.reduce((n,x)=>n+(a9844WhSig(id,x)===sig?1:0),0),q=a9923Qty(amount,matches);if(q<1)return false;
+    const stackIdx=a9844WhFindStack(w,id,v.meta),newSlot=stackIdx<0;if(newSlot&&a34WhSlots(w)>=max){toast('現行倉庫道具空間已滿（50 格）');return false}
+    let left=q,meta=null;for(let i=arr.length-1;i>=0&&left>0;i--){if(a9844WhSig(id,arr[i])===sig){meta=meta||a9844WhMeta(id,arr[i]);arr.splice(i,1);left--}}
+    if(left>0)return false;if(!arr.length)delete state.gearInventoryMeta[id];state.inventory[id]=Math.max(0,Number(state.inventory[id]||0)-q);if(!state.inventory[id])delete state.inventory[id];a16SyncLegacyPools();
+    const stacks=w.gearStacks[id]||(w.gearStacks[id]=[]),si=a9844WhFindStack(w,id,meta||v.meta);if(si>=0)stacks[si].count=Math.max(0,Number(stacks[si].count||0))+q;else stacks.push({...a9844WhMeta(id,meta||v.meta),count:q});
+  }
+  if(!a34WhSave(w))return false;save();a34RenderTalkingWarehouse(a25FindNpc('npc_wh_talking')?.npc||{id:'npc_wh_talking',n:'倉庫保管員'});return true;
+};
+a9844WhWithdraw=function(v,amount=1){
+  if(!state||!v?.id)return false;a16EnsureEnhanceState();const w=a34WhLoad(),id=String(v.id);
+  if(v.kind==='plain'){
+    const available=Math.max(0,Math.floor(Number(w.items[id]||0))),q=a9923Qty(amount,available);if(q<1)return false;
+    w.items[id]=available-q;if(w.items[id]<=0)delete w.items[id];state.inventory[id]=Math.max(0,Number(state.inventory[id]||0)+q);
+  }else{
+    const si=a9844WhFindStack(w,id,v.meta);if(si<0)return false;const st=w.gearStacks[id][si],available=Math.max(0,Math.floor(Number(st.count||0))),q=a9923Qty(amount,available);if(q<1)return false;
+    const m=a9844WhMeta(id,st);st.count=available-q;if(!st.count)w.gearStacks[id].splice(si,1);if(!w.gearStacks[id].length)delete w.gearStacks[id];state.inventory[id]=Math.max(0,Number(state.inventory[id]||0)+q);for(let i=0;i<q;i++)a16PoolPush(id,m.en,m.affix,m.seteff);
+  }
+  if(!a34WhSave(w))return false;save();a34RenderTalkingWarehouse(a25FindNpc('npc_wh_talking')?.npc||{id:'npc_wh_talking',n:'倉庫保管員'});return true;
+};
+a34WhMove=function(id,dir,amount=1){const v={id:String(id||''),kind:'plain',count:1,meta:null};return dir==='in'?a9844WhDeposit(v,amount):a9844WhWithdraw(v,amount)};
+
+function a9923ActionGroup(row,base,allText,onAll){
+  if(!row||!base||row.querySelector('.a9923-wh-actions'))return;const wrap=document.createElement('div');wrap.className='a9923-wh-actions';
+  base.parentNode.insertBefore(wrap,base);wrap.appendChild(base);const all=document.createElement('button');all.className=base.className;all.textContent=allText;
+  for(const a of ['data-a7-win','data-a7-wout','data-a34-win','data-a34-wout','data-a9844-win','data-a9844-wout'])if(base.hasAttribute(a))all.setAttribute(a,base.getAttribute(a));
+  all.setAttribute('data-a9923-all','1');all.disabled=base.disabled;all.onclick=e=>{e.preventDefault();e.stopPropagation();onAll()};wrap.appendChild(all);
+}
+function a9923EnhanceRegularWarehouse(){
+  const box=document.getElementById('village-action');if(!box)return;
+  box.querySelectorAll('.a7-wh-row').forEach(row=>{
+    const inBtn=row.querySelector('[data-a7-win]'),outBtn=row.querySelector('[data-a7-wout]'),btn=inBtn||outBtn;if(!btn)return;const id=String((inBtn?.dataset.a7Win)||(outBtn?.dataset.a7Wout)||'');
+    if(inBtn){const q=a9923RegularAvailableIn(id);if(q<1&&Number(state.inventory?.[id]||0)>0){inBtn.disabled=true;inBtn.title='只剩強化／詞條版本，請用共用倉庫'}a9923ActionGroup(row,inBtn,'全存',()=>a7WhMove(id,'in','all'))}
+    else a9923ActionGroup(row,outBtn,'全取',()=>a7WhMove(id,'out','all'));
+  });
+}
+function a9923FindTalkVariant(row,dir){
+  const name=String(row?.querySelector('b')?.textContent||'').trim(),arr=dir==='in'?a9844InvVariants():a9844WhStoredVariants();return arr.find(v=>String(a9844WhVariantName(v)).trim()===name)||null;
+}
+function a9923EnhanceTalkingWarehouse(){
+  const box=document.getElementById('village-action');if(!box)return;
+  box.querySelectorAll('.a7-wh-row').forEach(row=>{
+    const inBtn=row.querySelector('[data-a34-win],[data-a9844-win]'),outBtn=row.querySelector('[data-a34-wout],[data-a9844-wout]'),btn=inBtn||outBtn;if(!btn)return;
+    const v=a9923FindTalkVariant(row,inBtn?'in':'out');if(!v)return;
+    if(inBtn&&typeof a35IsCollar==='function'&&a35IsCollar(v.id)){inBtn.disabled=true;inBtn.textContent='不可存';inBtn.title='新阿肥現行規則：項圈不可存入倉庫'}
+    a9923ActionGroup(row,btn,inBtn?'全存':'全取',()=>{const cur=a9923FindTalkVariant(row,inBtn?'in':'out');if(!cur)return;return inBtn?a9844WhDeposit(cur,'all'):a9844WhWithdraw(cur,'all')});
+    const all=row.querySelector('[data-a9923-all]');if(all&&inBtn&&typeof a35IsCollar==='function'&&a35IsCollar(v.id)){all.disabled=true;all.textContent='不可存';all.title='新阿肥現行規則：項圈不可存入倉庫'}
+  });
+}
+const a9923RegularRenderBase=a7RenderWarehouse;a7RenderWarehouse=function(npc){const r=a9923RegularRenderBase.apply(this,arguments);a9923EnhanceRegularWarehouse();return r};
+const a9923TalkRenderBase=a34RenderTalkingWarehouse;a34RenderTalkingWarehouse=function(npc){const r=a9923TalkRenderBase.apply(this,arguments);a9923EnhanceTalkingWarehouse();return r};
+
+function a9923Style(){
+  if(document.getElementById('a9923-style'))return;const st=document.createElement('style');st.id='a9923-style';st.textContent=`
+body.a9846-reference-ui #village-action.a972-open .a7-wh-row{grid-template-columns:46px minmax(0,1fr) 138px!important}
+body.a9846-reference-ui #village-action .a9923-wh-actions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:5px!important;min-width:0!important}
+body.a9846-reference-ui #village-action .a9923-wh-actions .a7-btn{width:100%!important;min-width:0!important;padding-left:4px!important;padding-right:4px!important;white-space:nowrap!important}
+@media(max-width:600px){body.a9846-reference-ui #village-action.a972-open .a7-wh-row{grid-template-columns:42px minmax(0,1fr) 124px!important}body.a9846-reference-ui #village-action .a9923-wh-actions{gap:4px!important}}
+`;document.head.appendChild(st);
+}
+function a9923ApplyVersion(){
+  a9923Style();try{document.title=A41_BRAND+' · '+A9923_BUILD}catch(e){document.title='樓梯口天堂 · '+A9923_BUILD}
+  const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9923_BUILD;const note=document.querySelector('#a46-login-screen .a46-login-note');if(note){note.textContent='';note.style.display='none'};const info=document.querySelector('#a55-login-info');if(info)info.style.display='none';
+  const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.23｜倉庫存1／全存・取1／全取｜PC＋手機';
+}
+async function a9923Probe(){
+  const rows=[],snap=state?JSON.parse(JSON.stringify(state)):null,oldWh=localStorage.getItem(A34_WH_KEY),oldA7=localStorage.getItem(A7_WH_KEY);
+  try{
+    a76TestReset('knight',60);localStorage.removeItem(A34_WH_KEY);state.inventory={potion_heal:19};state.gearInventoryMeta={};state.inVillage=true;state.mapId='town_talking';state.mobs=[];render();const npc=DATA.towns?.town_talking?.npcs?.find(n=>n.id==='npc_wh_talking');a34RenderTalkingWarehouse(npc);a972ShowNpcAction();try{a9846DecorateNpc()}catch(e){}a9923EnhanceTalkingWarehouse();
+    let b=[...document.querySelectorAll('.a7-wh-row')].find(r=>r.querySelector('b')?.textContent.includes(DATA.items.potion_heal.n));let labels=b?[...b.querySelectorAll('button')].map(x=>String(x.textContent||'').trim()):[];rows.push({name:'倉庫列顯示存1＋全存',ok:labels.includes('存 1')&&labels.includes('全存'),detail:{labels}});let all=b?.querySelector('[data-a9923-all]');const before=Number(state.inventory.potion_heal||0);all?.click();await new Promise(r=>setTimeout(r,35));let w=a34WhLoad();rows.push({name:'普通道具全存整疊',ok:before===19&&Number(state.inventory.potion_heal||0)===0&&Number(w.items.potion_heal||0)===19});
+    b=[...document.querySelectorAll('.a7-wh-row')].find(r=>r.querySelector('b')?.textContent.includes(DATA.items.potion_heal.n));labels=b?[...b.querySelectorAll('button')].map(x=>String(x.textContent||'').trim()):[];rows.push({name:'倉庫列顯示取1＋全取',ok:labels.includes('取 1')&&labels.includes('全取'),detail:{labels}});all=b?.querySelector('[data-a9923-all]');all?.click();await new Promise(r=>setTimeout(r,35));w=a34WhLoad();rows.push({name:'普通道具全取整疊',ok:Number(state.inventory.potion_heal||0)===19&&Number(w.items.potion_heal||0)===0});
+    // 一般村莊倉庫也必須能整疊存取。
+    localStorage.removeItem(A7_WH_KEY);state.inventory={potion_heal:12};state.gearInventoryMeta={};a7WhMove('potion_heal','in','all');let rw=a7WhLoad();const regIn=Number(state.inventory.potion_heal||0)===0&&Number(rw.items.potion_heal||0)===12;a7WhMove('potion_heal','out','all');rw=a7WhLoad();rows.push({name:'一般倉庫全存＋全取',ok:regIn&&Number(state.inventory.potion_heal||0)===12&&Number(rw.items.potion_heal||0)===0});
+    // 特殊裝備：三件相同 +7 祝福，另留一件不同詞條；全存只搬同款三件。
+    state.inventory={wpn_1:4};state.gearInventoryMeta={};for(let i=0;i<3;i++)a16PoolPush('wpn_1',7,{bless:true});a16PoolPush('wpn_1',7,{anc:'eternal'});a34RenderTalkingWarehouse(npc);a9923EnhanceTalkingWarehouse();
+    const target=[...document.querySelectorAll('.a7-wh-row')].find(r=>String(r.querySelector('b')?.textContent||'').includes('+7')&&String(r.querySelector('b')?.textContent||'').includes('祝'));target?.querySelector('[data-a9923-all]')?.click();await new Promise(r=>setTimeout(r,35));w=a34WhLoad();const bs=(w.gearStacks.wpn_1||[]).find(x=>x.affix?.bless===true);rows.push({name:'特殊裝備同款全存不混詞條',ok:Number(bs?.count||0)===3&&Number(state.inventory.wpn_1||0)===1&&a16SpecialCount('wpn_1')===1});
+    const outrow=[...document.querySelectorAll('.a7-wh-row')].find(r=>String(r.querySelector('b')?.textContent||'').includes('+7')&&String(r.querySelector('b')?.textContent||'').includes('祝'));outrow?.querySelector('[data-a9923-all]')?.click();await new Promise(r=>setTimeout(r,35));w=a34WhLoad();rows.push({name:'特殊裝備同款全取保留 meta',ok:Number(state.inventory.wpn_1||0)===4&&a16SpecialCount('wpn_1')===4&&!(w.gearStacks.wpn_1||[]).some(x=>x.affix?.bless===true)});
+    const cid=(typeof A35_COLLAR_IDS!=='undefined'&&A35_COLLAR_IDS.size)?[...A35_COLLAR_IDS][0]:'';if(cid){state.inventory={[cid]:2};state.gearInventoryMeta={};const blocked=a9844WhDeposit({id:cid,kind:'plain'},'all')===false;w=a34WhLoad();rows.push({name:'項圈全存仍維持禁止',ok:blocked&&Number(w.items?.[cid]||0)===0});}
+    const prev=await window.__A9922_TEST__?.probe?.();rows.push({name:'Alpha99.22 倉庫不跳動回歸',ok:prev?.ok===true,detail:{passed:prev?.passed,total:prev?.total}});
+  }catch(e){rows.push({name:'Alpha99.23 probe exception',ok:false,detail:String(e?.stack||e)})}
+  finally{try{if(oldWh===null)localStorage.removeItem(A34_WH_KEY);else localStorage.setItem(A34_WH_KEY,oldWh);if(oldA7===null)localStorage.removeItem(A7_WH_KEY);else localStorage.setItem(A7_WH_KEY,oldA7);if(snap){state=snap;derive();render()}}catch(e){}}
+  return{ok:rows.every(x=>x.ok),build:A9923_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+}
+function a9923Audit(){const issues=[];if(!String(a7RenderWarehouse).includes('a9923EnhanceRegularWarehouse'))issues.push('一般倉庫未加入全存／全取');if(!String(a34RenderTalkingWarehouse).includes('a9923EnhanceTalkingWarehouse'))issues.push('共用倉庫未加入全存／全取');return{ok:issues.length===0,build:A9923_BUILD,issues}}
+const a9923RenderBase=render;render=function(){const r=a9923RenderBase.apply(this,arguments);a9923ApplyVersion();return r};
+const a9923LoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9923LoginBase.apply(this,arguments);a9923ApplyVersion();return r};
+a9923ApplyVersion();
+window.__A9923_TEST__={build:A9923_BUILD,audit:a9923Audit,probe:a9923Probe,previous:window.__A9922_TEST__};
+})();
+
+// ===== Alpha99.24：自動治癒藥水／治療魔法 HP 門檻完全分離 =====
+const A9924_BUILD='B1.0 Alpha99.24';
+(()=>{
+function a9924Ensure(){
+  if(!state)return;
+  if(typeof a97EnsureState==='function')a97EnsureState();
+  const a=state.autoCombat||(state.autoCombat={});
+  if(typeof a.healSkillPct!=='number')a.healSkillPct=Math.max(10,Math.min(90,Number(a.healPct||50)));
+  a.healPct=Math.max(10,Math.min(90,Number(a.healPct||50)));
+  a.healSkillPct=Math.max(10,Math.min(90,Number(a.healSkillPct||50)));
+}
+function a9924ApplyVersion(){
+  try{document.title=A41_BRAND+' · '+A9924_BUILD}catch(e){document.title='樓梯口天堂 · '+A9924_BUILD}
+  const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9924_BUILD;
+  const note=document.querySelector('#a46-login-screen .a46-login-note');if(note){note.textContent='';note.style.display='none'}
+  const info=document.querySelector('#a55-login-info');if(info)info.style.display='none';
+  const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.24｜自動藥水／治療魔法 HP 門檻分離｜PC＋手機';
+}
+function a9924Audit(){
+  const issues=[];
+  if(!state)return{ok:false,build:A9924_BUILD,issues:['無角色狀態']};
+  a9924Ensure();
+  const html=String(window.__A9868_TEST__?.settingsHtml?.()||drawerHtml('settings')||'');
+  const pot=(html.match(/data-a9868-num="healPct"/g)||[]).length;
+  const magic=(html.match(/data-a9868-num="healSkillPct"/g)||[]).length;
+  if(pot!==1)issues.push('治癒藥水 healPct 欄位數異常 '+pot);
+  if(magic!==1)issues.push('治療魔法 healSkillPct 欄位數異常 '+magic);
+  if(!('healSkillPct' in state.autoCombat))issues.push('healSkillPct 未建立');
+  return{ok:issues.length===0,build:A9924_BUILD,issues,healPct:state.autoCombat.healPct,healSkillPct:state.autoCombat.healSkillPct};
+}
+async function a9924Probe(){
+  const rows=[],snap=state?JSON.parse(JSON.stringify(state)):null,storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null;
+  const add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+  try{
+    // 舊存檔遷移：只有 healPct 時，第一次建立 healSkillPct 必須沿用原值。
+    a76TestReset('mage',80);a97EnsureState();state.autoCombat.healPct=70;delete state.autoCombat.healSkillPct;a9924Ensure();
+    add('舊存檔門檻安全遷移',state.autoCombat.healPct===70&&state.autoCombat.healSkillPct===70,{healPct:state.autoCombat.healPct,healSkillPct:state.autoCombat.healSkillPct});
+
+    // UI：兩個 select 必須是不同 key，改其中一個不能改另一個。
+    let host=document.createElement('div');host.innerHTML=window.__A9868_TEST__.settingsHtml();document.body.appendChild(host);bindDrawer(host);
+    let pot=host.querySelector('[data-a9868-num="healPct"]'),magic=host.querySelector('[data-a9868-num="healSkillPct"]');
+    state.autoCombat.healPct=40;state.autoCombat.healSkillPct=70;pot.value='40';magic.value='70';
+    pot.value='60';pot.dispatchEvent(new Event('change',{bubbles:true}));
+    add('修改藥水%不連動治療魔法%',state.autoCombat.healPct===60&&state.autoCombat.healSkillPct===70,{healPct:state.autoCombat.healPct,healSkillPct:state.autoCombat.healSkillPct});
+    magic.value='30';magic.dispatchEvent(new Event('change',{bubbles:true}));
+    add('修改治療魔法%不連動藥水%',state.autoCombat.healPct===60&&state.autoCombat.healSkillPct===30,{healPct:state.autoCombat.healPct,healSkillPct:state.autoCombat.healSkillPct});
+    host.remove();
+
+    // 行為 A：藥水 70%、治療魔法 30%，HP 60% 時只能喝藥，不能施法。
+    a76TestReset('mage',80);state.learnedSkills=['sk_heal1'];a97EnsureState();a9924Ensure();state.inventory={potion_heal:3};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_heal';state.autoCombat.healPct=70;state.autoCombat.healSkill=true;state.autoCombat.healSkillPct=30;state.autoCombat.healSkillId='sk_heal1';state.player.hp=Math.floor(state.player.maxHp*.60);state.player.mp=state.player.maxMp;state.running=true;state.skillCooldown={};a11AutoAt=0;
+    const p0=a8Count('potion_heal');a11Auto(1000);add('HP60：70%藥水／30%魔法只喝藥',a8Count('potion_heal')===p0-1&&!Number(state.skillCooldown.sk_heal1||0),{potions:a8Count('potion_heal'),cooldown:state.skillCooldown.sk_heal1||0});
+
+    // 行為 B：藥水 30%、治療魔法 70%，HP 60% 時只能施法，不能喝藥。
+    a76TestReset('mage',80);state.learnedSkills=['sk_heal1'];a97EnsureState();a9924Ensure();state.inventory={potion_heal:3};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_heal';state.autoCombat.healPct=30;state.autoCombat.healSkill=true;state.autoCombat.healSkillPct=70;state.autoCombat.healSkillId='sk_heal1';state.player.hp=Math.floor(state.player.maxHp*.60);state.player.mp=state.player.maxMp;state.running=true;state.skillCooldown={};a11AutoAt=0;
+    const p1=a8Count('potion_heal');a11Auto(2000);add('HP60：30%藥水／70%魔法只施法',a8Count('potion_heal')===p1&&Number(state.skillCooldown.sk_heal1||0)>0,{potions:a8Count('potion_heal'),cooldown:state.skillCooldown.sk_heal1||0});
+
+    const own=a9924Audit();add('Alpha99.24 UI/狀態稽核',own.ok,own);
+    const prev=await window.__A9923_TEST__?.probe?.();add('Alpha99.23 倉庫全存全取回歸',prev?.ok===true,{passed:prev?.passed,total:prev?.total});
+  }catch(e){add('Alpha99.24 probe exception',false,{error:String(e?.stack||e)})}
+  finally{try{if(storage)a76StorageRestore(storage);if(snap){state=snap;derive();render()}else state=null}catch(e){rows.push({name:'測試後還原',ok:false,detail:{error:String(e)}})}}
+  return{ok:rows.every(x=>x.ok),build:A9924_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+}
+const a9924RenderBase=render;render=function(){const r=a9924RenderBase.apply(this,arguments);if(state)a9924Ensure();a9924ApplyVersion();return r};
+const a9924LoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9924LoginBase.apply(this,arguments);a9924ApplyVersion();return r};
+a9924ApplyVersion();
+window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensure:a9924Ensure,previous:window.__A9923_TEST__};
+})();
+
+
+// =====================================================================
+// B1.0 Alpha99.25 — 自動設定欄位全面分離 + 百分比手動輸入
+// - attackMpMin 為唯一正式攻擊 MP 門檻；mpReserve 僅作舊存檔遷移來源。
+// - 自動販賣 ensure 不再觸碰 autoRestock。
+// - 自動使用道具 / 切換治癒藥水不再偷偷開啟自動購買。
+// - 自動設定所有百分比改為 number input，可輸入任意整數門檻。
+// =====================================================================
+(()=>{
+  const A9925_BUILD='B1.0 Alpha99.25';
+  function a9925Ensure(){
+    if(!state)return;
+    if(typeof a97EnsureState==='function')a97EnsureState();
+    const a=state.autoCombat||(state.autoCombat={});
+    if(typeof a.attackMpMin!=='number')a.attackMpMin=Math.max(0,Math.min(100,Number(a.mpReserve??50)||0));
+    a.attackMpMin=Math.max(0,Math.min(100,Math.round(Number(a.attackMpMin)||0)));
+    a.openMpMin=Math.max(0,Math.min(100,Math.round(Number(a.openMpMin)||0)));
+    a.convertHpMin=Math.max(0,Math.min(100,Math.round(Number(a.convertHpMin)||0)));
+    a.convertMpMax=Math.max(0,Math.min(100,Math.round(Number(a.convertMpMax)||0)));
+    a.healPct=Math.max(10,Math.min(90,Math.round(Number(a.healPct)||50)));
+    a.healSkillPct=Math.max(10,Math.min(90,Math.round(Number(a.healSkillPct)||50)));
+  }
+  const css=document.createElement('style');
+  css.textContent=`
+    .a9868-auto input.a9925-pct{box-sizing:border-box;width:70px;min-width:64px;height:38px;padding:5px 8px;border:1px solid #6d5321;border-radius:7px;background:#140d06;color:#f5e5b7;text-align:center;font:inherit;font-variant-numeric:tabular-nums}
+    .a9868-auto input.a9925-pct:focus{outline:2px solid rgba(224,168,51,.45);outline-offset:1px}
+    @media(max-width:560px){.a9868-auto input.a9925-pct{width:64px;min-width:60px;height:36px;padding:4px 6px}}
+  `;
+  document.head.appendChild(css);
+  function a9925ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9925_BUILD}catch(e){document.title='樓梯口天堂 · '+A9925_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9925_BUILD;
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.25｜自動設定欄位分離｜百分比可手動輸入｜PC＋手機';
+    // 依既有規則：登入頁不顯示更新內容。
+    const info=document.querySelector('#a55-login-info');if(info)info.style.display='none';
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.style.display='none';
+  }
+  function a9925Audit(){
+    const issues=[];if(!state)return{ok:false,issues:['無角色狀態'],build:A9925_BUILD};
+    a9925Ensure();
+    const a=state.autoCombat;
+    const html=(typeof window.__A9868_TEST__?.settingsHtml==='function')?window.__A9868_TEST__.settingsHtml():'';
+    for(const k of ['healPct','openMpMin','attackMpMin','healSkillPct','convertHpMin','convertMpMax']){
+      if(!html.includes('type="number"')||!html.includes('data-a9868-num="'+k+'"'))issues.push(k+' 尚未改為手動數字輸入');
+    }
+    if(/data-a11-auto-val="mpReserve"/.test(html))issues.push('共同設定仍暴露 mpReserve');
+    return{ok:issues.length===0,issues,build:A9925_BUILD,values:{healPct:a.healPct,healSkillPct:a.healSkillPct,attackMpMin:a.attackMpMin}};
+  }
+  function a9925Probe(){
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    const snap=state?JSON.parse(JSON.stringify(state)):null;
+    try{
+      if(!state&&typeof a76TestReset==='function')a76TestReset('elf',50);
+      if(!state)return{ok:false,rows:[{name:'state',ok:false}]};
+      a9925Ensure();const a=state.autoCombat;
+      // 1. attackMpMin and legacy mpReserve no longer mirror in ensure.
+      a.attackMpMin=63;a.mpReserve=17;a9925Ensure();
+      add('attackMpMin 與 mpReserve 不再互相覆蓋',a.attackMpMin===63&&a.mpReserve===17,{attackMpMin:a.attackMpMin,mpReserve:a.mpReserve});
+      // 2. sell ensure does not mutate restock.
+      if(!a.autoRestock)a.autoRestock={};a.autoRestock.potion_blue=false;a.blue=true;delete a.autoUseRestockLinked971;
+      if(typeof a971EnsureSellState==='function')a971EnsureSellState();
+      add('打開/初始化自動販賣不再改自動補貨',a.autoRestock.potion_blue===false,{restock:a.autoRestock.potion_blue});
+      // 3. numeric UI supports arbitrary values, not only preset options.
+      a.healPct=57;a.healSkillPct=43;a.attackMpMin=61;a9925Ensure();
+      const h=window.__A9868_TEST__?.settingsHtml?.()||'';
+      add('藥水門檻可顯示任意 57%',h.includes('data-a9868-num="healPct" value="57"'),{});
+      add('治療魔法門檻可顯示任意 43%',h.includes('data-a9868-num="healSkillPct" value="43"'),{});
+      add('攻擊技能 MP 門檻可顯示任意 61%',h.includes('data-a9868-num="attackMpMin" value="61"'),{});
+      add('百分比欄位使用 number input',h.includes('class="a9925-pct" type="number"'),{});
+      // 4. limits.
+      a.healPct=2;a.healSkillPct=101;a.attackMpMin=123;a9925Ensure();
+      add('百分比輸入會夾回合法範圍',a.healPct===10&&a.healSkillPct===90&&a.attackMpMin===100,{healPct:a.healPct,healSkillPct:a.healSkillPct,attackMpMin:a.attackMpMin});
+      const audit=a9925Audit();add('Alpha99.25 audit',audit.ok,audit);
+    }finally{
+      if(snap){for(const k of Object.keys(state))delete state[k];Object.assign(state,snap);try{derive();render()}catch(e){}}
+      try{a9925ApplyVersion()}catch(e){}
+    }
+    return{ok:rows.every(r=>r.ok),build:A9925_BUILD,rows};
+  }
+  function a9925UiProbe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null;let host=null;
+    try{
+      if(!state&&typeof a76TestReset==='function')a76TestReset('elf',50);
+      a9925Ensure();
+      host=document.createElement('div');host.id='a9925-ui-probe';host.style.cssText='position:fixed;left:0;top:0;width:min(100%,560px);max-height:95vh;overflow:auto;z-index:99999;background:#100a05';
+      host.innerHTML=window.__A9868_TEST__?.settingsHtml?.()||'';document.body.appendChild(host);bindDrawer(host);
+      const hp=host.querySelector('[data-a9868-num="healPct"]'),atk=host.querySelector('[data-a9868-num="attackMpMin"]'),magic=host.querySelector('[data-a9868-num="healSkillPct"]');
+      if(!hp||!atk||!magic)return{ok:false,error:'percent inputs missing'};
+      state.autoCombat.healSkillPct=43;magic.value='43';
+      hp.value='57';hp.dispatchEvent(new Event('change',{bubbles:true}));
+      atk.value='61';atk.dispatchEvent(new Event('change',{bubbles:true}));
+      const r={ok:state.autoCombat.healPct===57&&state.autoCombat.healSkillPct===43&&state.autoCombat.attackMpMin===61,
+        healPct:state.autoCombat.healPct,healSkillPct:state.autoCombat.healSkillPct,attackMpMin:state.autoCombat.attackMpMin,
+        tags:[hp.tagName,hp.type,atk.tagName,atk.type],overflow:Math.max(0,document.documentElement.scrollWidth-document.documentElement.clientWidth)};
+      return r;
+    }catch(e){return{ok:false,error:String(e),stack:e?.stack||''}}
+    finally{try{host?.remove();if(snap){state=snap;derive();render()}}catch(e){}}
+  }
+  const a9925RenderBase=render;render=function(){const r=a9925RenderBase.apply(this,arguments);try{a9925Ensure()}catch(e){}a9925ApplyVersion();return r};
+  const a9925LoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9925LoginBase.apply(this,arguments);a9925ApplyVersion();return r};
+  window.__A9925_TEST__={build:A9925_BUILD,ensure:a9925Ensure,audit:a9925Audit,probe:a9925Probe,reset:(cls='elf',lv=50)=>{if(typeof a76TestReset==='function')a76TestReset(cls,lv);a9925Ensure();a9925ApplyVersion();return !!state} ,uiProbe:a9925UiProbe};
+  try{a9925Ensure()}catch(e){}
+  a9925ApplyVersion();
 })();
 
 
