@@ -33179,27 +33179,6 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
 }
 /* 手機沿用原本的純圖示小尺寸，避免重新放大。 */
 </style>
-<script id="a9928-version-patch">
-(()=>{
-  const A9928_BUILD='B1.0 Alpha99.28';
-  function a9928ApplyVersion(){
-    try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+A9928_BUILD}catch(_e){}
-    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9928_BUILD;
-    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9928_BUILD+' · BUFF 精簡橫排版';
-    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.28｜BUFF 精簡橫排｜PC＋手機';
-  }
-  try{
-    if(typeof render==='function'){
-      const base=render;render=function(){const r=base.apply(this,arguments);a9928ApplyVersion();return r};
-    }
-    if(typeof a46ShowLogin==='function'){
-      const baseLogin=a46ShowLogin;a46ShowLogin=function(){const r=baseLogin.apply(this,arguments);a9928ApplyVersion();return r};
-    }
-  }catch(_e){}
-  window.__A9928_TEST__={build:A9928_BUILD,mode:'buff-compact-horizontal',desktop:{height:30,minWidth:72,maxWidth:110,icon:26,gap:4},mobile:'keep-alpha66-compact-icon'};
-  a9928ApplyVersion();
-})();
-</script>
 
 
 <!-- ===== B1.0 Alpha99.29：強化裝備分堆 + 圖示強化值角標 ===== -->
@@ -33405,4 +33384,20 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
 })();
 </script>
 
+
+<script id="a9929-final-version-lock">
+(()=>{
+  const BUILD='B1.0 Alpha99.29';
+  function apply(){
+    try{document.title=(typeof A41_BRAND!=='undefined'?A41_BRAND:'樓梯口天堂')+' · '+BUILD}catch(_e){}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=BUILD;
+    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=BUILD+' · 強化分堆＋角標';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.29｜強化裝備分堆＋圖示強化值｜PC＋手機';
+  }
+  window.__BUILD_VERSION__=BUILD;
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply,{once:true});else apply();
+  window.addEventListener('load',apply,{once:true});
+  setTimeout(apply,0);
+})();
+</script>
 </body></html>
