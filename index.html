@@ -23432,13 +23432,13 @@ function a9842PandoraSingle(kind='gold'){
  const r=a9842PandoraRoll();if(!a9842PandoraAward(r,tag))return false;save();renderHUDDynamic();return r;
 }
 function a9842PandoraTen(){
- a9842Ensure();const p=state.a9842.pandora;if(Number(state.player.lv||0)<41){toast('潘朵拉需 Lv.41');return false}if(p.freeReady){toast('請先使用下一抽免費');return false}if(Number(state.player.gold||0)<3000000){toast('金幣不足');return false}
- state.player.gold-=3000000;const rs=[];for(let i=0;i<10;i++){const r=a9842PandoraRoll();if(r.id){a9842PandoraAward(r,'潘朵拉十連');rs.push(r)}}p.progress=Math.min(10,p.progress+10);if(p.progress>=10)p.freeReady=true;save();renderHUDDynamic();return rs;
+ a9842Ensure();const p=state.a9842.pandora;if(Number(state.player.lv||0)<41){toast('潘朵拉需 Lv.41');return false}if(p.freeReady){toast('請先使用下一抽免費');return false}if(Number(state.player.gold||0)<1){toast('金幣不足');return false}
+ state.player.gold-=1;const rs=[];for(let i=0;i<10;i++){const r=a9842PandoraRoll();if(r.id){a9842PandoraAward(r,'潘朵拉十連');rs.push(r)}}p.progress=Math.min(10,p.progress+10);if(p.progress>=10)p.freeReady=true;save();renderHUDDynamic();return rs;
 }
 function a9842PandoraInfoHtml(){const pools=a9842Pool();return A9842_RARITIES.map(r=>'<details class="a9842-rarity"><summary>'+escapeHtml(r.label)+' '+r.weight.toFixed(2)+'% · '+pools[r.key].length+' 種</summary><div class="a9842-items">'+pools[r.key].map(id=>'<span class="a9842-chip">'+escapeHtml(DATA.items[id]?.n||id)+'</span>').join('')+'</div></details>').join('')}
 function a9842RenderPandora(npc){
  const box=document.getElementById('village-action');if(!box||!state)return;a9842Ensure();const p=state.a9842.pandora,lv=Number(state.player.lv||1),ok=lv>=41;
- box.innerHTML='<div class="village-section-title">潘朵拉的黑市</div><div class="a7-note">花金幣轉動命運的齒輪。可抽中完整 330 種獎池（含 ★傳說級）。需 Lv.41。</div><div class="a9842-head"><span>累計抽獎 <b>'+p.progress+'/10</b>（滿10次下一抽免費）</span><span>世界王抽獎 <b>'+p.worldBossDraws+'</b></span></div><div class="a9842-actions"><button class="a7-btn alt" data-a9842-p1 '+(ok?'':'disabled')+'>'+(p.freeReady?'下一抽免費':'單抽 300,000')+'</button><button class="a7-btn" data-a9842-p10 '+(ok&&!p.freeReady?'':'disabled')+'>十連抽 3,000,000</button><button class="a7-btn" data-a9842-pwb '+(ok&&p.worldBossDraws>0?'':'disabled')+'>世界王抽獎</button><button class="a7-btn" data-a9842-pinfo>獎勵查看</button></div><div id="a9842-pandora-info" style="display:none;margin-top:8px">'+a9842PandoraInfoHtml()+'</div>';
+ box.innerHTML='<div class="village-section-title">潘朵拉的黑市</div><div class="a7-note">花金幣轉動命運的齒輪。可抽中完整 330 種獎池（含 ★傳說級）。需 Lv.41。</div><div class="a9842-head"><span>累計抽獎 <b>'+p.progress+'/10</b>（滿10次下一抽免費）</span><span>世界王抽獎 <b>'+p.worldBossDraws+'</b></span></div><div class="a9842-actions"><button class="a7-btn alt" data-a9842-p1 '+(ok?'':'disabled')+'>'+(p.freeReady?'下一抽免費':'單抽 300,000')+'</button><button class="a7-btn" data-a9842-p10 '+(ok&&!p.freeReady?'':'disabled')+'>十連抽 1</button><button class="a7-btn" data-a9842-pwb '+(ok&&p.worldBossDraws>0?'':'disabled')+'>世界王抽獎</button><button class="a7-btn" data-a9842-pinfo>獎勵查看</button></div><div id="a9842-pandora-info" style="display:none;margin-top:8px">'+a9842PandoraInfoHtml()+'</div>';
  box.querySelector('[data-a9842-p1]').onclick=()=>{const r=a9842PandoraSingle('gold');if(r){toast('獲得 '+DATA.items[r.id].n);a9842RenderPandora(npc)}};
  box.querySelector('[data-a9842-p10]').onclick=()=>{const rs=a9842PandoraTen();if(rs){toast('十連抽完成');a9842RenderPandora(npc)}};
  box.querySelector('[data-a9842-pwb]').onclick=()=>{const r=a9842PandoraSingle('wb');if(r){toast('獲得 '+DATA.items[r.id].n);a9842RenderPandora(npc)}};
@@ -33009,6 +33009,51 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
   const a9926LoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9926LoginBase.apply(this,arguments);a9926ApplyVersion();return r};
   window.__A9926_TEST__={build:A9926_BUILD,ensure:a9926Ensure,hardProtect:a9926HardProtect,sellUnit:a9926SellUnit,supplyFloor:a9926SupplyFloor,qty:a9926AutoSellQty,audit:a9926Audit,uiProbe:a9926UiProbe};
   try{a9926Ensure()}catch(e){}a9926ApplyVersion();
+})();
+
+
+// =====================================================================
+// B1.0 Alpha99.27 — 潘朵拉十連抽 1 金幣
+// - 只調整潘朵拉十連抽價格：3,000,000 -> 1 金幣。
+// - 單抽、免費抽、世界王抽、獎池、機率與累計免費規則全部不變。
+// =====================================================================
+(()=>{
+  const A9927_BUILD='B1.0 Alpha99.27';
+  const A9927_PANDORA_TEN_COST=1;
+  function a9927ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9927_BUILD}catch(e){document.title='樓梯口天堂 · '+A9927_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9927_BUILD;
+    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9927_BUILD+' · 潘朵拉十連抽 1 金幣';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.27｜潘朵拉十連抽 1 金幣｜PC＋手機';
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='';
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='';
+  }
+  function a9927Probe(){
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    const snap=state?JSON.parse(JSON.stringify(state)):null;
+    try{
+      if(typeof a76TestReset==='function')a76TestReset('elf',50);
+      a9842Ensure();
+      state.player.lv=50;state.player.gold=100;
+      state.a9842.pandora.progress=0;state.a9842.pandora.freeReady=false;
+      const before=state.player.gold,inv0=Object.values(state.inventory||{}).reduce((a,b)=>a+Number(b||0),0);
+      const rs=a9842PandoraTen();
+      const inv1=Object.values(state.inventory||{}).reduce((a,b)=>a+Number(b||0),0);
+      add('潘朵拉十連實際只扣 1 金幣',Array.isArray(rs)&&rs.length===10&&state.player.gold===before-1,{before,after:state.player.gold,count:rs?.length});
+      add('十連仍發放 10 個獎勵',inv1-inv0===10,{beforeItems:inv0,afterItems:inv1});
+      add('十連後仍維持累計滿10下一抽免費',state.a9842.pandora.progress===10&&state.a9842.pandora.freeReady===true,{progress:state.a9842.pandora.progress,freeReady:state.a9842.pandora.freeReady});
+      state.player.gold=0;state.a9842.pandora.progress=0;state.a9842.pandora.freeReady=false;
+      add('0 金幣時仍阻止十連',a9842PandoraTen()===false,{gold:state.player.gold});
+      let box=document.getElementById('village-action'),madeBox=false;if(!box){box=document.createElement('div');box.id='village-action';document.body.appendChild(box);madeBox=true}
+      state.player.gold=100;state.a9842.pandora.freeReady=false;a9842RenderPandora({id:'npc_pandora',n:'潘朵拉'});const b=box.querySelector('[data-a9842-p10]');add('十連按鈕顯示 1 金幣',!!b&&/十連抽\s*1(?:\D|$)/.test(b.textContent),{text:b?.textContent||''});if(madeBox)box.remove();
+    }catch(e){add('Alpha99.27 probe exception',false,{error:String(e?.stack||e)})}
+    finally{if(snap){state=snap;try{derive();render()}catch(e){}}}
+    return{ok:rows.every(x=>x.ok),build:A9927_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+  const a9927RenderBase=render;render=function(){const r=a9927RenderBase.apply(this,arguments);a9927ApplyVersion();return r};
+  const a9927LoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9927LoginBase.apply(this,arguments);a9927ApplyVersion();return r};
+  window.__A9927_TEST__={build:A9927_BUILD,cost:A9927_PANDORA_TEN_COST,probe:a9927Probe,ten:()=>a9842PandoraTen()};
+  a9927ApplyVersion();
 })();
 
 
