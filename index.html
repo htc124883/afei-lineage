@@ -32800,6 +32800,218 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
 })();
 
 
+// =====================================================================
+// B1.0 Alpha99.26 — 自動販賣全面開放 + 安全清包
+// - 原本 noSell / tradable:false / p<=1 / 技能書 / 箭矢 / 補給品，可由玩家自行勾選自動販賣。
+// - 關鍵任務/試煉道具、玩家鎖定物品、目前正在使用的箭矢維持硬保護。
+// - 低價/無基準價道具允許 0 金幣清理，避免買賣套利。
+// - 自動補貨與自動販賣同時開啟時，自售保留補貨安全線，避免買了又賣。
+// - 強化/詞綴/席琳效果裝備可另行勾選「含特殊裝備」，預設仍不賣。
+// =====================================================================
+(()=>{
+  const A9926_BUILD='B1.0 Alpha99.26';
+  const A9926_HARD_IDS=new Set(['item_mastery_proof','item_wyvern_blood']);
+  function a9926Ensure(){
+    if(!state)return;
+    if(typeof a971EnsureSellState==='function')a971EnsureSellState();
+    const a=state.autoSell||(state.autoSell={enabled:false,items:{},stats:{items:0,gold:0,batches:0}});
+    if(!a.items||typeof a.items!=='object'||Array.isArray(a.items))a.items={};
+    if(typeof a.allowCritical!=='boolean')a.allowCritical=false;
+    for(const [id,c0] of Object.entries(a.items)){
+      const c=(c0&&typeof c0==='object')?c0:{};
+      c.enabled=!!c.enabled;c.keep=Math.max(0,Math.floor(Number(c.keep)||0));c.sellSpecial=!!c.sellSpecial;
+      a.items[id]=c;
+    }
+    state.saveMeta={...(state.saveMeta||{}),autoSellRevision:'alpha99.26-open-safe'};
+  }
+  function a9926QuestCritical(id,d=a8Item(id)){
+    if(!d)return true;
+    const sid=String(id||''),desc=String(d.d||''),name=String(d.n||'');
+    if(d.type==='quest'||sid.startsWith('quest_')||A9926_HARD_IDS.has(sid))return true;
+    if(/任務道具|試煉任務道具|試煉所需|50\s*級試煉|精通之路|無法刪除/.test(desc))return true;
+    // 明確標成任務/試煉的舊資料即使沒有 type 也保留。
+    if(/任務|試煉/.test(name)&&Number(d.p||0)<=1)return true;
+    return false;
+  }
+  function a9926HardProtect(id){
+    const d=a8Item(id);if(!d)return'找不到物品資料';
+    try{if(typeof a972IsLocked==='function'&&a972IsLocked(id))return'玩家鎖定'}catch(e){}
+    if(a9926QuestCritical(id,d)&&!state?.autoSell?.allowCritical)return'關鍵任務／試煉道具';
+    if(d.isArrow&&String(state?.equipment?.arrow||'')===String(id))return'目前使用中的箭矢';
+    return'';
+  }
+  // Alpha99.26 後，這個函式只代表「不可自動賣」的硬保護，不再沿用商店不可販售條件。
+  a971AutoSellProtected=function(id){return a9926HardProtect(id)};
+
+  function a9926SpecialCount(id){
+    try{if(typeof a16SpecialCount==='function')return Math.max(0,Number(a16SpecialCount(id))||0)}catch(e){}
+    const a=state?.gearInventoryMeta?.[id];return Array.isArray(a)?a.length:0;
+  }
+  function a9926PlainCount(id){
+    const total=Math.max(0,Number(a8Count(id))||0),d=a8Item(id);if(!d||!total)return 0;
+    if(['wpn','arm','acc'].includes(d.type)&&!d.isArrow){
+      try{if(typeof a16PlainCount==='function')return Math.max(0,Math.min(total,Number(a16PlainCount(id))||0))}catch(e){}
+      return Math.max(0,total-a9926SpecialCount(id));
+    }
+    return total;
+  }
+  a971PlainSellableCount=function(id){return a9926PlainCount(id)};
+
+  function a9926SupplyFloor(id){
+    try{
+      if(!state?.autoCombat?.autoRestock?.[id])return 0;
+      if(id==='wpn_22')return Number(A97_ARROW_LOW||200)+1;
+      if(typeof a97RestockLimit==='function'){
+        const lim=a97RestockLimit(id);return Math.max(0,Math.floor(Number(lim?.low)||0)+1);
+      }
+    }catch(e){}
+    return 0;
+  }
+  function a9926SellUnit(id){
+    const d=a8Item(id);if(!d)return 0;
+    const p=Number(d.p||0);
+    if(!(p>1))return 0; // 沒有有效基準價：只清包，不發金幣。
+    return Math.max(1,Math.floor(p*.3));
+  }
+  a971SellUnit=function(id){return a9926SellUnit(id)};
+
+  function a9926AutoSellQty(id){
+    a9926Ensure();const cfg=state.autoSell.items[id];
+    if(!state.autoSell.enabled||!cfg?.enabled||a9926HardProtect(id))return 0;
+    const total=Math.max(0,Number(a8Count(id))||0);
+    const allowed=cfg.sellSpecial?total:a9926PlainCount(id);
+    const keep=Math.max(Math.max(0,Math.floor(Number(cfg.keep)||0)),a9926SupplyFloor(id));
+    return Math.max(0,Math.min(allowed,total-keep));
+  }
+  a971AutoSellQty=function(id){return a9926AutoSellQty(id)};
+
+  function a9926TakeForAutoSell(id,qty,allowSpecial){
+    qty=Math.max(0,Math.min(Math.floor(Number(qty)||0),Math.max(0,Number(a8Count(id))||0)));if(qty<1)return false;
+    const d=a8Item(id);if(!d)return false;
+    if(!(['wpn','arm','acc'].includes(d.type)&&!d.isArrow))return !!a8Take(id,qty);
+    try{if(typeof a16EnsureEnhanceState==='function')a16EnsureEnhanceState()}catch(e){}
+    let left=qty,plain=a9926PlainCount(id),usePlain=Math.min(left,plain);
+    if(usePlain){
+      if(typeof _a16RawTake!=='function'||!_a16RawTake(id,usePlain))return false;
+      left-=usePlain;
+    }
+    if(left>0&&!allowSpecial)return false;
+    while(left>0){
+      const pool=state.gearInventoryMeta?.[id];if(!Array.isArray(pool)||!pool.length)return false;
+      if(typeof _a16RawTake!=='function'||!_a16RawTake(id,1))return false;
+      pool.pop();left--;
+      if(!pool.length)delete state.gearInventoryMeta[id];
+    }
+    try{if(typeof a16SyncLegacyPools==='function')a16SyncLegacyPools()}catch(e){}
+    return true;
+  }
+  function a9926AutoSellSweep(now=Date.now()){
+    if(!state?.running||a7IsVillage()||now<A971_SELL_AT)return false;
+    A971_SELL_AT=now+A971_SELL_INTERVAL;a9926Ensure();if(!state.autoSell.enabled)return false;
+    let soldItems=0,goldGain=0,types=0,discarded=0;
+    for(const [id,cfg] of Object.entries(state.autoSell.items||{})){
+      if(!cfg?.enabled)continue;const qty=a9926AutoSellQty(id);if(qty<1)continue;
+      const unit=a9926SellUnit(id);if(!a9926TakeForAutoSell(id,qty,!!cfg.sellSpecial))continue;
+      soldItems+=qty;goldGain+=unit*qty;types++;if(unit<=0)discarded+=qty;
+    }
+    if(!soldItems)return false;
+    state.player.gold+=goldGain;state.autoSell.stats.items+=soldItems;state.autoSell.stats.gold+=goldGain;state.autoSell.stats.batches++;
+    log('自動販賣 '+types+' 種／'+fmt(soldItems)+' 件，獲得 '+fmt(goldGain)+' 金幣'+(discarded?'（其中 '+fmt(discarded)+' 件為 0 金幣清理）':'')+'。','gain');
+    save();renderHUDDynamic();return true;
+  }
+  a971AutoSellSweep=a9926AutoSellSweep;
+
+  function a9926AutoSellInventoryHtml(){
+    a9926Ensure();const a=state.autoSell,rows=Object.entries(state.inventory||{}).filter(([,n])=>Number(n)>0);
+    const list=rows.map(([id,n])=>{
+      const d=a8Item(id)||{n:id},reason=a9926HardProtect(id),plain=a9926PlainCount(id),special=Math.max(0,Number(n)-plain),cfg=a.items[id]||{enabled:false,keep:0,sellSpecial:false},unit=a9926SellUnit(id),floor=a9926SupplyFloor(id);
+      if(reason)return '<div class="a971-sell-row protected"><div><b>'+escapeHtml(d.n||id)+'</b><small>×'+fmt(n)+' · '+escapeHtml(reason)+'</small></div><span>保護</span></div>';
+      const oldBlocked=!a10Sellable(id),specialCtl=special?'<label class="a9926-special"><input type="checkbox" data-a9926-special="'+escapeHtml(id)+'" '+(cfg.sellSpecial?'checked':'')+'>含特殊裝備 '+fmt(special)+'</label>':'';
+      return '<div class="a971-sell-row"><label><input type="checkbox" data-a971-sell="'+escapeHtml(id)+'" '+(cfg.enabled?'checked':'')+'><span><b>'+escapeHtml(d.n||id)+'</b><small>目前 '+fmt(n)+(special?' · 特殊 '+fmt(special):'')+(oldBlocked?' · 原禁售已開放自售':'')+' · '+(unit>0?'售價 '+fmt(unit)+'/個':'0 金幣清理')+(floor?' · 補貨安全保留≥'+fmt(floor):'')+'</small></span></label><div class="a9926-row-actions"><label class="a971-keep">保留 <select data-a971-keep="'+escapeHtml(id)+'">'+a971KeepOptions(cfg.keep)+'</select></label>'+specialCtl+'</div></div>';
+    }).join('');
+    return '<div class="a971-sell-box"><h3>自動販賣</h3>'+
+      '<label class="a971-master"><input type="checkbox" data-a971-enabled '+(a.enabled?'checked':'')+'><span><b>狩獵中自動販賣指定背包道具</b><small>你親自勾選的普通禁售物、技能書、箭矢、補給品也能自動清理。</small></span></label>'+
+      '<label class="a971-master a9926-danger"><input type="checkbox" data-a9926-critical '+(a.allowCritical?'checked':'')+'><span><b>允許販賣關鍵任務／試煉道具（高風險）</b><small>預設關閉；只有你主動開啟後，這些道具才會出現可販賣勾選。</small></span></label>'+
+      '<div class="a971-sell-note">玩家鎖定與目前使用中的箭矢永遠保護；關鍵任務／試煉道具預設保護，但可用上方高風險開關解鎖。無有效基準價的物品以 0 金幣清理；自動補貨開啟時會保留安全數量，避免買回又賣。特殊強化／詞綴裝備需另外勾「含特殊裝備」。</div>'+
+      '<div class="a971-stats">累計自售：'+fmt(a.stats.items)+' 件 · '+fmt(a.stats.gold)+' 金幣 · '+fmt(a.stats.batches)+' 批</div>'+
+      (list||'<div class="dim">背包目前沒有可設定的物品。</div>')+'</div>';
+  }
+  a971AutoSellInventoryHtml=a9926AutoSellInventoryHtml;
+
+  const a9926BindBase=bindDrawer;
+  bindDrawer=function(root){
+    a9926BindBase(root);
+    root.querySelectorAll('[data-a9926-critical]').forEach(e=>e.onchange=()=>{
+      a9926Ensure();state.autoSell.allowCritical=!!e.checked;save();try{renderDrawers()}catch(_e){}
+    });
+    root.querySelectorAll('[data-a9926-special]').forEach(e=>e.onchange=()=>{
+      a9926Ensure();const id=e.dataset.a9926Special,cfg=state.autoSell.items[id]||(state.autoSell.items[id]={enabled:false,keep:0,sellSpecial:false});
+      cfg.sellSpecial=!!e.checked;save();
+    });
+  };
+
+
+  try{if(!document.getElementById('a9926-style')){const st=document.createElement('style');st.id='a9926-style';st.textContent='.a9926-row-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}.a9926-special{display:flex;gap:5px;align-items:center;font-size:11px;color:#d5b46a}.a9926-danger{margin-top:7px;border-color:#7a4b28!important;background:#1b1009!important}.a9926-danger b{color:#f0b36a}@media(max-width:600px){.a9926-row-actions{justify-content:flex-start}.a9926-special{font-size:10px}}';document.head.appendChild(st)}}catch(e){}
+  function a9926ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9926_BUILD}catch(e){document.title='樓梯口天堂 · '+A9926_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9926_BUILD;
+    const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9926_BUILD+' · 自動販賣全面開放＋安全清包';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.26｜自動販賣全面開放＋安全清包｜PC＋手機';
+    // 依既定規則：登入頁不塞更新內容。
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='';
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');if(info)info.innerHTML='';
+  }
+  function a9926Audit(){
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    const snap=state?JSON.parse(JSON.stringify(state)):null;
+    try{
+      if(typeof a76TestReset==='function')a76TestReset('elf',50);a9926Ensure();
+      state.inventory={potion_heal:40,bk_heal1:5,mat_chimera_snake:7,item_spy_report:1,wpn_22:500};state.player.gold=1000;state.running=true;state.inVillage=false;
+      state.autoSell.enabled=true;
+      state.autoSell.items.potion_heal={enabled:true,keep:0,sellSpecial:false};
+      state.autoSell.items.bk_heal1={enabled:true,keep:0,sellSpecial:false};
+      state.autoSell.items.mat_chimera_snake={enabled:true,keep:0,sellSpecial:false};
+      state.autoSell.items.item_spy_report={enabled:true,keep:0,sellSpecial:false};
+      add('補給品可加入自動販賣',a9926HardProtect('potion_heal')===''&&a9926AutoSellQty('potion_heal')===40,{reason:a9926HardProtect('potion_heal')});
+      add('技能書可加入自動販賣',a9926HardProtect('bk_heal1')===''&&a9926AutoSellQty('bk_heal1')===5,{reason:a9926HardProtect('bk_heal1')});
+      add('低價材料可 0 金幣清理',a9926SellUnit('mat_chimera_snake')===0&&a9926AutoSellQty('mat_chimera_snake')===7,{unit:a9926SellUnit('mat_chimera_snake')});
+      add('關鍵試煉道具預設維持硬保護',!!a9926HardProtect('item_spy_report')&&a9926AutoSellQty('item_spy_report')===0,{reason:a9926HardProtect('item_spy_report')});
+      state.autoSell.allowCritical=true;add('高風險開關可解鎖關鍵試煉道具',a9926HardProtect('item_spy_report')===''&&a9926AutoSellQty('item_spy_report')===1,{reason:a9926HardProtect('item_spy_report')});state.autoSell.allowCritical=false;
+      state.equipment.arrow='wpn_22';state.autoSell.items.wpn_22={enabled:true,keep:0,sellSpecial:false};
+      add('目前使用中的箭矢維持硬保護',!!a9926HardProtect('wpn_22')&&a9926AutoSellQty('wpn_22')===0,{reason:a9926HardProtect('wpn_22')});
+
+      // 自動補貨與自售同時開：只清超出安全線的數量。
+      delete state.equipment.arrow;state.inventory.potion_heal=80;state.autoCombat.autoRestock.potion_heal=true;state.autoSell.items.potion_heal={enabled:true,keep:0,sellSpecial:false};
+      const floor=a9926SupplyFloor('potion_heal'),q=a9926AutoSellQty('potion_heal');
+      add('補貨與自售同開不會買賣循環',floor>0&&q===Math.max(0,80-floor),{floor,qty:q});
+
+      // 特殊裝備：預設只白板，明確勾選後可連特殊一起清。
+      if(typeof a76TestReset==='function')a76TestReset('knight',50);a9926Ensure();state.inventory={wpn_1:3};state.gearInventoryMeta={};if(typeof a16PoolPush==='function')a16PoolPush('wpn_1',7,{});state.autoSell.enabled=true;state.autoSell.items.wpn_1={enabled:true,keep:0,sellSpecial:false};
+      const qPlain=a9926AutoSellQty('wpn_1');state.autoSell.items.wpn_1.sellSpecial=true;const qAll=a9926AutoSellQty('wpn_1');
+      add('特殊裝備需明確勾選才會自售',qPlain===2&&qAll===3,{qPlain,qAll,special:a9926SpecialCount('wpn_1')});
+      const g0=state.player.gold,A9710=A971_SELL_AT;A971_SELL_AT=0;state.running=true;state.inVillage=false;a9926AutoSellSweep(Date.now()+1000);A971_SELL_AT=A9710;
+      add('勾選後特殊裝備 metadata 一起正確移除',a8Count('wpn_1')===0&&a9926SpecialCount('wpn_1')===0&&state.player.gold>=g0,{count:a8Count('wpn_1'),special:a9926SpecialCount('wpn_1')});
+    }catch(e){add('Alpha99.26 audit exception',false,{error:String(e?.stack||e)})}
+    finally{if(snap){state=snap;try{derive();render()}catch(e){}}}
+    return{ok:rows.every(x=>x.ok),build:A9926_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+  function a9926UiProbe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null;let host=null;
+    try{
+      if(typeof a76TestReset==='function')a76TestReset('elf',50);a9926Ensure();
+      state.inventory={bk_heal1:3,mat_chimera_snake:5,item_spy_report:1,wpn_1:2};state.gearInventoryMeta={};if(typeof a16PoolPush==='function')a16PoolPush('wpn_1',7,{});
+      host=document.createElement('div');host.style.cssText='position:fixed;inset:0;z-index:99999;overflow:auto;background:#100a05';host.innerHTML=a9926AutoSellInventoryHtml();document.body.appendChild(host);bindDrawer(host);
+      const skill=host.querySelector('[data-a971-sell="bk_heal1"]'),mat=host.querySelector('[data-a971-sell="mat_chimera_snake"]'),quest=host.textContent.includes('間諜報告書')&&host.textContent.includes('關鍵任務／試煉道具'),special=host.querySelector('[data-a9926-special="wpn_1"]'),critical=host.querySelector('[data-a9926-critical]');
+      return{ok:!!skill&&!!mat&&!!quest&&!!special&&!!critical,skill:!!skill,material:!!mat,questProtected:!!quest,specialToggle:!!special,criticalToggle:!!critical,overflow:Math.max(0,document.documentElement.scrollWidth-document.documentElement.clientWidth)};
+    }catch(e){return{ok:false,error:String(e?.stack||e)}}finally{try{host?.remove();if(snap){state=snap;derive();render()}}catch(e){}}
+  }
+  const a9926RenderBase=render;render=function(){const r=a9926RenderBase.apply(this,arguments);try{a9926Ensure()}catch(e){}a9926ApplyVersion();return r};
+  const a9926LoginBase=a46ShowLogin;a46ShowLogin=function(){const r=a9926LoginBase.apply(this,arguments);a9926ApplyVersion();return r};
+  window.__A9926_TEST__={build:A9926_BUILD,ensure:a9926Ensure,hardProtect:a9926HardProtect,sellUnit:a9926SellUnit,supplyFloor:a9926SupplyFloor,qty:a9926AutoSellQty,audit:a9926Audit,uiProbe:a9926UiProbe};
+  try{a9926Ensure()}catch(e){}a9926ApplyVersion();
+})();
+
+
 })();
 </script>
 
