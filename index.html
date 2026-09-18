@@ -33866,6 +33866,101 @@ const A9937_BUILD='B1.0 Alpha99.37';
   try{if(state){renderDrawers();renderHUDDynamic()}}catch(e){console.error('Alpha99.37 refresh',e)}
 })();
 
+
+// =====================================================================
+// B1.0 Alpha99.38 — 黃昏山脈移入「野外」地圖列表
+// 目的：
+// 1) 黃昏山脈直接顯示在一般「野外」地圖清單，不再需要找「天罰」分頁。
+// 2) 移除狩獵場 UI 的「天罰」分頁，底層 A59 天罰函式保留以相容舊程式／舊存檔。
+// 3) 黃昏山脈既有怪物、掉落、場景、Lv.55 進入條件全部不改。
+// =====================================================================
+const A9938_BUILD='B1.0 Alpha99.38';
+(()=>{
+  function a9938EnsureWildEntry(){
+    if(!DATA.mapCategories||typeof DATA.mapCategories!=='object')DATA.mapCategories={};
+    if(!Array.isArray(DATA.mapCategories.wild))DATA.mapCategories.wild=[];
+    // 先移除可能重複的舊項目，再固定放到野外清單尾端。
+    DATA.mapCategories.wild=DATA.mapCategories.wild.filter(e=>String(e?.v||'')!==String(A59_TWILIGHT_MAP));
+    DATA.mapCategories.wild.push({v:A59_TWILIGHT_MAP,t:'黃昏山脈'});
+    return true;
+  }
+
+  function a9938ApplyVersion(){
+    a9938EnsureWildEntry();
+    try{document.title=A41_BRAND+' · '+A9938_BUILD}catch(e){document.title='樓梯口天堂 · '+A9938_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9938_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');
+    if(note)note.textContent='Alpha99.38：黃昏山脈已移入一般「野外」地圖列表；不再需要從「天罰」分頁尋找。';
+    const sub=document.querySelector('#create-screen .create-sub');
+    if(sub)sub.textContent='全面重製核心 Alpha99.38｜黃昏山脈移入野外列表｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9938_BUILD+'</b><p>黃昏山脈現在直接列在狩獵場的「野外」清單中，可像其他野外地圖一樣點擊前往，不必再切換到「天罰」分頁。</p><p>原本的黃昏山脈地圖資料、巨人／巨人戰士／巨人長老、戰鬥與掉落邏輯完全沿用，沒有重建或改數值。</p><small>目前仍保留原本 Lv.55 進入需求；底層天罰函式保留相容性，但狩獵場 UI 不再顯示「天罰」分頁。</small>';
+  }
+
+  // 99.37 會額外插入「天罰」頁籤；99.38 將它從狩獵 UI 移除。
+  const a9938DrawerBase=drawerHtml;
+  drawerHtml=function(which){
+    a9938EnsureWildEntry();
+    if(which==='hunt'&&mapTab==='tianfa')mapTab='wild';
+    let h=a9938DrawerBase(which);
+    if(which==='hunt'){
+      h=h.replace(/<button class="map-tab(?: active)?" data-map-tab="tianfa">天罰<\/button>/g,'');
+    }
+    return h;
+  };
+
+  // a57PrideDrawer 自己建立 tabs，也同步拿掉「天罰」。
+  const a9938PrideDrawerBase=a57PrideDrawer;
+  a57PrideDrawer=function(){
+    a9938EnsureWildEntry();
+    let h=a9938PrideDrawerBase.apply(this,arguments);
+    return h.replace(/<button class="map-tab(?: active)?" data-map-tab="tianfa">天罰<\/button>/g,'');
+  };
+
+  function a9938Audit(){
+    a9938EnsureWildEntry();
+    const wild=DATA.mapCategories?.wild||[];
+    const matches=wild.filter(e=>String(e?.v||'')===String(A59_TWILIGHT_MAP));
+    const mapOk=Array.isArray(DATA.maps?.[A59_TWILIGHT_MAP]);
+    const giants=A59_GIANT_IDS.every(id=>!!DATA.mobs?.[id]);
+    let ui='';
+    const oldTab=mapTab;
+    try{mapTab='wild';ui=drawerHtml('hunt')}finally{mapTab=oldTab}
+    return{
+      ok:matches.length===1&&matches[0]?.t==='黃昏山脈'&&mapOk&&giants&&/data-map="twilight_mt"/.test(ui)&&!(/data-map-tab="tianfa"/.test(ui)),
+      build:A9938_BUILD,
+      wildEntryCount:matches.length,
+      wildEntry:matches[0]||null,
+      mapOk,
+      giantsOk:giants,
+      visibleInWild:/data-map="twilight_mt"/.test(ui),
+      tianfaTabHidden:!(/data-map-tab="tianfa"/.test(ui)),
+      entryMinLv:A59_TIANFA_MIN_LV,
+      issues:[
+        ...(matches.length===1?[]:['黃昏山脈在野外清單的項目數不正確']),
+        ...(mapOk?[]:['黃昏山脈地圖資料遺失']),
+        ...(giants?[]:['黃昏山脈三種巨人資料不完整']),
+        ...(/data-map="twilight_mt"/.test(ui)?[]:['野外 UI 未顯示黃昏山脈']),
+        ...(!/data-map-tab="tianfa"/.test(ui)?[]:['狩獵 UI 仍殘留天罰分頁'])
+      ]
+    };
+  }
+
+  const a9938RenderBase=render;
+  render=function(){a9938EnsureWildEntry();const r=a9938RenderBase.apply(this,arguments);a9938ApplyVersion();return r};
+  const a9938InitBase=init;
+  init=function(){a9938EnsureWildEntry();const r=a9938InitBase.apply(this,arguments);a9938ApplyVersion();return r};
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);a9938ApplyVersion();return r}}
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);a9938ApplyVersion();return r}}
+  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);a9938ApplyVersion();return r}}
+
+  window.__A9938_TEST__={build:A9938_BUILD,audit:a9938Audit,ensure:a9938EnsureWildEntry};
+  a9938EnsureWildEntry();
+  a9938ApplyVersion();
+  try{if(state)renderDrawers()}catch(e){console.error('Alpha99.38 refresh',e)}
+})();
+
 })();
 </script>
 
