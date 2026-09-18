@@ -33494,6 +33494,378 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
   a9935ApplyVersion();
 })();
 
+// ===== Alpha99.36：世界王正式接入共同自動設定 =====
+const A9936_BUILD='B1.0 Alpha99.36';
+(()=>{
+  const A9936_PROXY_HP=1000000000;
+  let A9936_PROXY=null,A9936_PROXY_ID='',A9936_IN_AUTO=false;
+
+  function a9936ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9936_BUILD}catch(e){document.title='樓梯口天堂 · '+A9936_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9936_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.36：世界王戰鬥正式接入共同自動設定；喝水、治療、Buff、補貨、開怪與攻擊技能可在世界王模式運作。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.36｜世界王自動設定接入｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9936_BUILD+'</b><p>修正世界王戰鬥使用獨立 fighting 狀態、導致共同版自動設定整套被跳過的問題。現在世界王會照角色原有設定自動喝水、施放治療術／Buff／轉換魔法、使用輔助道具、自動補貨，並可施放開怪與循環攻擊技能。</p><p>一般狩獵流程、BOSS 傷害／回血規則、白色藥水 120 HP、Alpha99.35 BUFF 精簡介面均未改動。</p><small>世界王仍維持獨立戰鬥狀態，不會把一般狩獵 state.running 強制打開；本版以代理目標把技能傷害安全轉送到目前世界王。</small>';
+  }
+
+  function a9936ResetProxy(){A9936_PROXY=null;A9936_PROXY_ID=''}
+  function a9936BossProxy(){
+    const id=typeof a43BossPrimaryId==='function'?a43BossPrimaryId():'';
+    if(!id||!DATA.mobs?.[id])return null;
+    if(!A9936_PROXY||A9936_PROXY_ID!==id){
+      A9936_PROXY_ID=id;
+      A9936_PROXY={id,hp:A9936_PROXY_HP,maxHp:A9936_PROXY_HP,clip:'idle',frame:0,ft:0,dead:false,respawnAt:0,hitFlash:0,nextAtk:Number.MAX_SAFE_INTEGER};
+    }
+    A9936_PROXY.id=id;A9936_PROXY.hp=A9936_PROXY_HP;A9936_PROXY.maxHp=A9936_PROXY_HP;A9936_PROXY.dead=false;A9936_PROXY.respawnAt=0;A9936_PROXY.nextAtk=Number.MAX_SAFE_INTEGER;
+    return A9936_PROXY;
+  }
+  function a9936Playable(){return !!(state?.boss?.fighting&&!state?.dead&&Number(state?.player?.hp||0)>0)}
+  function a9936BossDamage(raw){
+    raw=Math.max(0,Math.floor(Number(raw)||0));if(!raw||!a9936Playable())return 0;
+    const m=a43BossPrimaryMob?.(),mult=Math.max(.01,Number(m?.dmgTakenMult??1)),dmg=Math.max(1,Math.floor(raw*mult));
+    state.boss.hp=Math.max(0,Number(state.boss.hp||0)-dmg);
+    try{a43FloatBoss(dmg,false,'技能')}catch(e){}
+    if(state.boss.hp<=0)try{a43DefeatBoss()}catch(e){}
+    else{try{a43RenderBossStage()}catch(e){}try{a43UpdateStartButtons()}catch(e){}}
+    return dmg;
+  }
+
+  // 以現行共同版 a11Auto 為唯一規則來源：只在一次自動判定期間建立「世界王代理目標」。
+  // 這樣治療、Buff、道具、補貨、MP 門檻與技能選擇完全沿用玩家原設定，不另做第二套規則。
+  function a9936BossAuto(now=performance.now()){
+    if(A9936_IN_AUTO||!a9936Playable())return{ran:false,damage:0};
+    const proxy=a9936BossProxy();if(!proxy)return{ran:false,damage:0};
+    const old={running:state.running,mobs:state.mobs,target:state.target,save,render,renderHUDDynamic,renderDrawers,a7IsVillage};
+    const a=state.autoCombat||{},oldOpen=a.openSkill,oldAttack=a.attackSkill;
+    // 世界王不接受即死技能自動秒殺；其他攻擊技能照原技能傷害流程結算。
+    if(DATA.skills?.[a.openSkill]?.instakill)a.openSkill='';
+    if(DATA.skills?.[a.attackSkill]?.instakill)a.attackSkill='';
+    const hp0=Number(state.player.hp||0),mp0=Number(state.player.mp||0),gold0=Number(state.player.gold||0),boss0=Number(state.boss.hp||0),proxy0=A9936_PROXY_HP;
+    let error='';
+    try{
+      A9936_IN_AUTO=true;
+      state.running=true;state.mobs=[proxy,...Array(Math.max(0,MOB_COUNT-1)).fill(null)];state.target=0;
+      // 世界王可能從村莊頁籤進入；共同 auto 在此階段應視為戰鬥場景。
+      a7IsVillage=function(){return false};
+      // 禁止把代理目標 / 暫時 running=true 寫進存檔或畫面；離開代理區後再正常存一次。
+      save=function(){};render=function(){};renderHUDDynamic=function(){};renderDrawers=function(){};
+      a11Auto(Number(now)||performance.now());
+    }catch(e){error=String(e?.stack||e);console.error('Alpha99.36 world boss auto',e)}
+    finally{
+      a.openSkill=oldOpen;a.attackSkill=oldAttack;
+      state.running=old.running;state.mobs=old.mobs;state.target=old.target;
+      save=old.save;render=old.render;renderHUDDynamic=old.renderHUDDynamic;renderDrawers=old.renderDrawers;a7IsVillage=old.a7IsVillage;
+      A9936_IN_AUTO=false;
+    }
+    const raw=Math.max(0,proxy0-Number(proxy.hp||proxy0)),damage=a9936BossDamage(raw);
+    // 還原代理 HP，保留同一物件 identity，讓「開怪技能」只會對同一隻世界王施放一次。
+    proxy.hp=A9936_PROXY_HP;proxy.dead=false;
+    try{old.save()}catch(e){}
+    try{old.renderHUDDynamic()}catch(e){}
+    try{a9935RenderBuffRibbon()}catch(e){}
+    try{a43RenderBossStage()}catch(e){}
+    try{a43UpdateStartButtons()}catch(e){}
+    return{ran:true,damage,rawDamage:raw,error,hpDelta:Number(state.player.hp||0)-hp0,mpDelta:Number(state.player.mp||0)-mp0,goldDelta:Number(state.player.gold||0)-gold0,bossDelta:Number(state.boss.hp||0)-boss0,running:!!state.running};
+  }
+
+  const a9936TickBase=tick;
+  tick=function(dt,now){const r=a9936TickBase.apply(this,arguments);if(state?.boss?.fighting)try{a9936BossAuto(now)}catch(e){console.error('Alpha99.36 boss auto tick',e)}return r};
+
+  const a9936BossStartBase=a43StartBoss;
+  a43StartBoss=function(){a9936ResetProxy();a11AutoAt=0;try{A97_RESTOCK_AT=0}catch(e){}const r=a9936BossStartBase.apply(this,arguments);if(r){a11AutoAt=0;try{A97_RESTOCK_AT=0}catch(e){}}return r};
+  const a9936BossStopBase=a43StopBoss;
+  a43StopBoss=function(){const r=a9936BossStopBase.apply(this,arguments);a9936ResetProxy();return r};
+  const a9936BossSelectBase=a43SelectBoss;
+  a43SelectBoss=function(){a9936ResetProxy();return a9936BossSelectBase.apply(this,arguments)};
+
+  function a9936Clone(v){try{return typeof a74Clone==='function'?a74Clone(v):JSON.parse(JSON.stringify(v))}catch(e){return JSON.parse(JSON.stringify(v))}}
+  function a9936PrepareBoss(cls='mage',lv=80){
+    a76TestReset(cls,lv);a97EnsureState();
+    const entry=Object.entries(DATA.worldBosses||{}).find(([,c])=>!c?.mvOnly&&a43BossParts(c).length);
+    if(!entry)throw new Error('找不到可測試世界王');
+    const [id,c]=entry;state.boss=state.boss||{};state.boss.id=id;state.boss.active=true;state.boss.fighting=true;state.boss.hp=a43BossMaxHp(c);state.boss.nextPlayerAt=Number.MAX_SAFE_INTEGER;state.boss.nextBossAt=Number.MAX_SAFE_INTEGER;state.boss.nextHealAt=0;state.dead=false;state.running=false;state.inVillage=true;
+    state.autoCombat.heal=false;state.autoCombat.healSkill=false;state.autoCombat.haste=false;state.autoCombat.blue=false;state.autoCombat.brave=false;state.autoCombat.cookie=false;state.autoCombat.cautious=false;state.autoCombat.poly=false;state.autoCombat.attackSkill='';state.autoCombat.openSkill='';state.autoCombat.convertSkill='';state.autoCombat.autoBuffSkills={};for(const k of Object.keys(state.autoCombat.autoRestock||{}))state.autoCombat.autoRestock[k]=false;
+    a9936ResetProxy();a11AutoAt=0;try{A97_RESTOCK_AT=0}catch(e){};derive();return{id,c};
+  }
+  function a9936Audit(){
+    const snap=state?a9936Clone(state):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,rows=[];
+    const add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      // 1) 白色藥水：世界王中仍依 Alpha99.34 的 120 HP 生效。
+      a9936PrepareBoss('knight',80);state.inventory.potion_ult=5;state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.player.hp=Math.max(1,state.player.maxHp-300);const h0=state.player.hp,c0=a8Count('potion_ult');a9936BossAuto(1000);add('世界王自動喝白水120HP',state.player.hp-h0===120&&a8Count('potion_ult')===c0-1,{healed:state.player.hp-h0,count:c0+'→'+a8Count('potion_ult')});
+
+      // 2) 低存量自動補貨：世界王模式也會補白水。
+      a9936PrepareBoss('knight',80);state.inventory.potion_ult=20;state.player.gold=100000;state.autoCombat.autoRestock.potion_ult=true;state.player.hp=state.player.maxHp;const g0=state.player.gold;a9936BossAuto(2000);add('世界王白水低存量自動補貨',a8Count('potion_ult')===100&&state.player.gold===g0-48000,{count:a8Count('potion_ult'),goldSpent:g0-state.player.gold});
+
+      // 3) 治療術。
+      a9936PrepareBoss('mage',80);state.learnedSkills=['sk_heal1'];state.autoCombat.healSkill=true;state.autoCombat.healSkillId='sk_heal1';state.autoCombat.healSkillPct=90;state.player.hp=Math.max(1,state.player.maxHp-300);state.player.mp=state.player.maxMp;const hh=state.player.hp,mm=state.player.mp;a9936BossAuto(3000);add('世界王自動治療術',state.player.hp>hh&&state.player.mp===mm-Number(DATA.skills.sk_heal1.mp||0),{heal:state.player.hp-hh,mp:mm+'→'+state.player.mp});
+
+      // 4) 自動 Buff。
+      a9936PrepareBoss('mage',80);state.learnedSkills=['sk_shield'];state.autoCombat.autoBuffSkills={sk_shield:true};state.player.mp=state.player.maxMp;const bm=state.player.mp;a9936BossAuto(4000);add('世界王自動維持Buff',a11SkillBuffActive('sk_shield')&&state.player.mp===bm-Number(DATA.skills.sk_shield.mp||0),{active:a11SkillBuffActive('sk_shield'),mp:bm+'→'+state.player.mp});
+
+      // 5) 循環攻擊技能真的打在世界王，不打隱藏的一般怪。
+      a9936PrepareBoss('mage',80);state.learnedSkills=['sk_firearrow'];state.autoCombat.attackSkill='sk_firearrow';state.autoCombat.attackMpMin=0;state.player.mp=state.player.maxMp;const bh=state.boss.hp,am=state.player.mp,oldMobs=state.mobs;a9936BossAuto(5000);add('世界王循環攻擊技能命中BOSS',state.boss.hp<bh&&state.player.mp===am-Number(DATA.skills.sk_firearrow.mp||0)&&state.mobs===oldMobs&&state.running===false,{damage:bh-state.boss.hp,mp:am+'→'+state.player.mp,mobsRestored:state.mobs===oldMobs,running:state.running});
+
+      // 6) 開怪技能只對同一隻世界王觸發一次。
+      a9936PrepareBoss('mage',80);state.learnedSkills=['sk_firearrow'];state.autoCombat.openSkill='sk_firearrow';state.autoCombat.openMpMin=0;state.player.mp=state.player.maxMp;const ob0=state.boss.hp,om0=state.player.mp;a9936BossAuto(6000);const ob1=state.boss.hp,om1=state.player.mp;a11AutoAt=0;a9936BossAuto(7000);const ob2=state.boss.hp,om2=state.player.mp;add('世界王開怪技能只施放一次',ob1<ob0&&om1<om0&&ob2===ob1&&om2===om1,{firstDamage:ob0-ob1,secondDamage:ob1-ob2,mp:[om0,om1,om2]});
+
+      // 7) 世界王模式不會把一般狩獵 running 打開，也不會替換原 mobs。
+      add('世界王代理結束後狀態還原',state.running===false&&Array.isArray(state.mobs),{running:state.running,mobCount:state.mobs.length});
+    }catch(e){add('Alpha99.36 世界王自動設定 audit',false,{error:String(e?.stack||e)})}
+    finally{try{if(snap){state=snap;derive();render()}else state=null;if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending}catch(e){rows.push({name:'還原測試環境',ok:false,detail:{error:String(e)}})}a9936ResetProxy();a9936ApplyVersion()}
+    return{ok:rows.every(x=>x.ok),build:A9936_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+
+  const rb=render;render=function(){const r=rb.apply(this,arguments);a9936ApplyVersion();return r};
+  const ib=init;init=function(){const r=ib.apply(this,arguments);a9936ApplyVersion();return r};
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);a9936ApplyVersion();return r}};
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);a9936ApplyVersion();return r}};
+  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);a9936ApplyVersion();return r}};
+  function a9936LiveSetup(kind){
+    if(kind==='potion'){
+      a9936PrepareBoss('knight',80);state.inventory.potion_ult=10;state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=80;state.player.hp=Math.floor(state.player.maxHp*.45);state.boss.nextBossAt=Date.now()+100;state.boss.nextPlayerAt=Number.MAX_SAFE_INTEGER;a11AutoAt=0;
+    }else if(kind==='attack'){
+      a9936PrepareBoss('mage',80);state.learnedSkills=['sk_firearrow'];state.autoCombat.attackSkill='sk_firearrow';state.autoCombat.attackMpMin=0;state.player.mp=state.player.maxMp;state.boss.nextBossAt=Number.MAX_SAFE_INTEGER;state.boss.nextPlayerAt=Number.MAX_SAFE_INTEGER;a11AutoAt=0;
+    }else if(kind==='buff'){
+      a9936PrepareBoss('mage',80);state.learnedSkills=['sk_shield'];state.autoCombat.autoBuffSkills={sk_shield:true};state.player.mp=state.player.maxMp;state.boss.nextBossAt=Number.MAX_SAFE_INTEGER;state.boss.nextPlayerAt=Number.MAX_SAFE_INTEGER;a11AutoAt=0;
+    }else throw new Error('unknown live setup');
+    return a9936LiveSnapshot();
+  }
+  function a9936LiveSnapshot(){return state?{hp:Number(state.player.hp||0),maxHp:Number(state.player.maxHp||0),mp:Number(state.player.mp||0),maxMp:Number(state.player.maxMp||0),pot:a8Count('potion_ult'),gold:Number(state.player.gold||0),bossHp:Number(state.boss?.hp||0),fighting:!!state.boss?.fighting,running:!!state.running,dead:!!state.dead,shield:!!a11SkillBuffActive('sk_shield')}:null}
+  window.__A9936_TEST__={build:A9936_BUILD,audit:a9936Audit,bossAuto:a9936BossAuto,resetProxy:a9936ResetProxy,prepareBoss:a9936PrepareBoss,liveSetup:a9936LiveSetup,liveSnapshot:a9936LiveSnapshot};
+  a9936ApplyVersion();
+})();
+
+// =====================================================================
+// B1.0 Alpha99.37 — 傲慢之塔完全無限制 + 10F/20F正常地圖 + 黃昏山脈入口可見化
+// 目的：
+// 1) 傲慢 1~20F 不再檢查等級、封印進度、金幣、11F傳送符/移動卷；點樓層即可進。
+// 2) 10F/20F 不再被世界王流程吃掉：兩層皆可作為正常狩獵地圖進入。
+// 3) 10F/20F 世界王保留為獨立按鈕；塔樓入場等級限制取消，但世界王冷卻仍保留。
+// 4) 黃昏山脈資料本來就存在；本版讓「天罰」分頁永遠可看見。Lv.55進入門檻本版不改。
+// 5) 不刪除封印/傳送符道具與舊存檔欄位，避免回歸影響其他系統。
+// =====================================================================
+const A9937_BUILD='B1.0 Alpha99.37';
+(()=>{
+  const A9937_TOWER_MIN=1,A9937_TOWER_MAX=20;
+
+  function a9937ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9937_BUILD}catch(e){document.title='樓梯口天堂 · '+A9937_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9937_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');
+    if(note)note.textContent='Alpha99.37：傲慢之塔 1～20F 改為完全無限制；10F／20F 一般地圖與世界王分離；黃昏山脈「天罰」入口固定可見。';
+    const sub=document.querySelector('#create-screen .create-sub');
+    if(sub)sub.textContent='全面重製核心 Alpha99.37｜傲慢完全無限制＋20F／黃昏山脈入口修正｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9937_BUILD+'</b><p>傲慢之塔 1～20F 現在全部可直接進入，不再要求等級、逐層解封、解除天罰封印、入場金幣、11F 傳送符或移動卷。</p><p>10F 與 20F 原本被世界王流程直接攔截，本版改成「一般狩獵地圖」與「世界王挑戰」兩條獨立入口，因此 20F 不會再看起來只到 19F。黃昏山脈原始地圖資料一直存在，本版讓天罰分頁固定顯示，避免因等級而整個入口消失。</p><small>封印／傳送符／移動卷道具與舊存檔欄位完整保留，不刪資料；黃昏山脈 Lv.55 進入規則未修改；世界王冷卻仍維持原規則。</small>';
+  }
+
+  function a9937FloorValid(floor){
+    floor=Math.floor(Number(floor)||0);
+    return floor>=A9937_TOWER_MIN&&floor<=A9937_TOWER_MAX&&Array.isArray(DATA.maps?.['pride_f'+floor]);
+  }
+
+  // 傲慢入場計畫：1~20F 一律零消耗、零前置。
+  a57EntryPlan=function(floor){
+    floor=Math.floor(Number(floor)||0);
+    if(!state?.player)return{ok:false,reason:'沒有角色狀態'};
+    if(floor<A9937_TOWER_MIN||floor>A9937_TOWER_MAX)return{ok:false,reason:'樓層無效'};
+    if(!Array.isArray(DATA.maps?.['pride_f'+floor]))return{ok:false,reason:'傲慢之塔 '+floor+'F 地圖資料不存在'};
+    return{ok:true,floor,gold:0,seals:0,scrolls:0,boss:'',reason:'完全無限制版：直接進入，不消耗任何入場資源'};
+  };
+  a57ConfirmEntry=function(plan){return !!plan?.ok};
+  a57FloorState=function(floor){
+    floor=Math.floor(Number(floor)||0);
+    if(!a9937FloorValid(floor))return{mode:'locked',label:'地圖缺失'};
+    return{mode:'open',label:'直接進入'};
+  };
+  a57FloorCost=function(){return '無等級／無封印／無入場費／無傳送道具限制'};
+
+  // 舊解除封印操作保留函式相容性，但在本版不再需要使用。
+  a57UnsealFloor=function(){
+    toast('Alpha99.37 已取消傲慢之塔入場封印限制，不需要解除封印。');
+    return true;
+  };
+
+  function a9937ClearBossMode(){
+    if(!state?.boss)return;
+    if(state.boss.fighting)try{a43StopBoss(false)}catch(e){}
+    state.boss.active=false;
+    state.boss.fighting=false;
+    try{a9936ResetProxy?.()}catch(e){}
+    try{updateBgm()}catch(e){}
+  }
+
+  // 1~20F 全部走真正 mapId；10F/20F 不再自動跳世界王頁。
+  a57EnterPrideFloor=function(floor){
+    if(!state)return false;
+    floor=Math.floor(Number(floor)||0);
+    const plan=a57EntryPlan(floor);
+    if(!plan.ok){toast(plan.reason);return false}
+    const id='pride_f'+floor;
+    if(String(state.mapId||'')===id&&!a7IsVillage()&&!state.boss?.active){
+      toast('目前已在傲慢之塔 '+floor+'F');
+      return true;
+    }
+    a9937ClearBossMode();
+    if(!a57CommitEntry(plan))return false;
+    a57EnsureState();
+    state.a57.prideBossRoomFloor=0;
+    state.a57.lastTowerFloor=floor;
+    state.lastHuntMap=id;
+    const ok=_a54GoHuntBase(id)!==false;
+    mapTab='tower';
+    if(ok!==false){
+      state.lastHuntMap=id;
+      state.a57.lastTowerFloor=floor;
+      save();
+      try{renderDrawers()}catch(e){}
+      return true;
+    }
+    return false;
+  };
+
+  // 10F / 20F 世界王改為獨立挑戰入口；不經塔樓門禁。
+  function a9937EnterPrideBoss(floor){
+    if(!state)return false;
+    floor=Math.floor(Number(floor)||0);
+    if(floor!==10&&floor!==20)return false;
+    const id=floor===10?A57_BOSS10:A57_BOSS20;
+    const c=DATA.worldBosses?.[id];
+    if(!c||c.mvOnly){toast('傲慢之塔 '+floor+'F 世界王資料不存在');return false}
+    if(state.dead||Number(state.player?.hp||0)<=0){toast('角色死亡，無法挑戰世界王');return false}
+    a57EnsureState();
+    state.a57.prideBossRoomFloor=floor;
+    mapTab='worldboss';
+    const ok=a43SelectBoss(id);
+    if(ok===false){toast('無法載入傲慢之塔 '+floor+'F 世界王');return false}
+    save();
+    try{renderDrawers()}catch(e){}
+    toast('已選擇傲慢之塔 '+floor+'F 世界王，可直接開始挑戰');
+    return true;
+  }
+
+  // 塔樓兩隻世界王取消「等級」限制；死亡與世界王冷卻等一般戰鬥安全規則仍保留。
+  const a9937StartBossBase=a43StartBoss;
+  a43StartBoss=function(){
+    const id=state?.boss?.id;
+    if(id===A57_BOSS10||id===A57_BOSS20){
+      const c=DATA.worldBosses?.[id];
+      if(!c)return a9937StartBossBase.apply(this,arguments);
+      const oldMin=c.minLv;
+      try{c.minLv=0;return a9937StartBossBase.apply(this,arguments)}
+      finally{c.minLv=oldMin}
+    }
+    return a9937StartBossBase.apply(this,arguments);
+  };
+
+  // 傲慢清單重做：20F 會真的出現在一般狩獵樓層中；10F同樣修正。
+  a57PrideDrawer=function(){
+    if(!state)return'<h3>傲慢之塔</h3>';
+    a57EnsureState();
+    const tabs='<div class="map-tabs">'+[['village','村莊'],['wild','野外'],['dungeon','地監'],['special','特殊'],['tianfa','天罰'],['tower','傲慢'],['worldboss','世界王']].map(([k,n])=>'<button class="map-tab '+(mapTab===k?'active':'')+'" data-map-tab="'+k+'">'+n+'</button>').join('')+'</div>';
+    const rows=[];
+    for(let f=1;f<=20;f++){
+      const id='pride_f'+f,exists=Array.isArray(DATA.maps?.[id]);
+      const names=exists?DATA.maps[id].map(mid=>DATA.mobs?.[mid]?.n||mid).filter(Boolean):[];
+      const current=String(state.mapId||'')===id&&!a7IsVillage()&&!state.boss?.active;
+      rows.push(
+        '<div class="a9937-floor-row">'+
+          '<button class="a57-floor '+(exists?'open':'locked')+(current?' active':'')+'" '+(exists?'data-a57-floor="'+f+'"':'disabled')+'>'+
+            '<span><b>'+f+'F'+((f===10||f===20)?' · 一般狩獵地圖':'')+'</b>'+
+            '<small>'+(exists?escapeHtml(names.join('、')):'地圖資料缺失')+'</small></span>'+
+            '<em>'+(exists?'直接進入':'不可用')+'</em>'+
+          '</button>'+
+          ((f===10||f===20)?'<button class="a9937-boss-btn" data-a9937-boss="'+f+'">挑戰 '+(f===10?'扭曲的潔尼斯女王':'幻象眼魔')+'</button>':'')+
+        '</div>'
+      );
+    }
+    return '<h3>傲慢之塔 · 1～20F 完全無限制</h3>'+tabs+
+      '<div class="a9937-free-note"><b>完全無限制版</b><br>1～20F 全部直接進入：不檢查等級、不用解除封印、不收金幣、不消耗 11F 傳送符／移動卷。10F、20F 的一般狩獵地圖與世界王挑戰已分離。</div>'+
+      '<div class="a57-floor-list">'+rows.join('')+'</div>'+
+      '<div class="a57-future">21F 以上目前仍不列入本次「1～20F 完全無限制」範圍。</div>';
+  };
+
+  const a9937BindBase=bindDrawer;
+  bindDrawer=function(root){
+    a9937BindBase(root);
+    root.querySelectorAll('[data-a9937-boss]').forEach(b=>b.onclick=()=>a9937EnterPrideBoss(Number(b.dataset.a9937Boss)));
+  };
+
+  // 黃昏山脈資料本來存在，但 A59 會在未滿 Lv.55 時把「天罰」分頁整個藏起來。
+  // 本版只修「找不到入口」：分頁永遠顯示；實際進入仍沿用原 Lv.55 規則。
+  const a9937DrawerBase=drawerHtml;
+  drawerHtml=function(which){
+    if(which==='hunt'&&mapTab==='tianfa')return a59TianfaDrawer();
+    let h=a9937DrawerBase(which);
+    if(which==='hunt'&&!h.includes('data-map-tab="tianfa"')){
+      h=h.replace(/(<div class="map-tabs">)/,'$1<button class="map-tab" data-map-tab="tianfa">天罰</button>');
+    }
+    return h;
+  };
+
+  // 取代舊稽核只檢查 1F/19F 的盲點。
+  a57Audit=function(){
+    const missing=[];
+    for(let f=1;f<=20;f++)if(!Array.isArray(DATA.maps?.['pride_f'+f]))missing.push(f);
+    const twilight=Array.isArray(DATA.maps?.[A59_TWILIGHT_MAP]);
+    const giants=A59_GIANT_IDS.every(id=>!!DATA.mobs?.[id]);
+    return{
+      ok:missing.length===0&&twilight&&giants,
+      issues:[
+        ...missing.map(f=>'傲慢之塔 '+f+'F 地圖資料遺失'),
+        ...(twilight?[]:['黃昏山脈地圖資料遺失']),
+        ...(giants?[]:['黃昏山脈巨人資料不完整'])
+      ],
+      warn:[],
+      schema:'B1.0-a9937',
+      pride:{unrestricted:true,minFloor:1,maxFloor:20,levelGate:false,sealGate:false,goldFee:false,passOrScroll:false,normalMap10:true,normalMap20:true,separateBossButtons:true},
+      twilight:{map:A59_TWILIGHT_MAP,visibleTab:true,entryMinLv:A59_TIANFA_MIN_LV}
+    };
+  };
+
+  function a9937Audit(){
+    const p=a57Audit();
+    return{
+      ok:p.ok,
+      build:A9937_BUILD,
+      pride:p.pride,
+      twilight:p.twilight,
+      map20:Array.isArray(DATA.maps?.pride_f20)?DATA.maps.pride_f20.slice():null,
+      twilightMobs:Array.isArray(DATA.maps?.[A59_TWILIGHT_MAP])?DATA.maps[A59_TWILIGHT_MAP].slice():null,
+      issues:p.issues
+    };
+  }
+
+  const st=document.createElement('style');
+  st.id='a9937-style';
+  st.textContent=`
+    .a9937-free-note{border:1px solid #6d5630;border-left:3px solid #c49a43;background:#171006;color:#bdaa81;padding:8px;margin:7px 0;font-size:9px;line-height:1.6}
+    .a9937-free-note b{color:#f0d17c}
+    .a9937-floor-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;align-items:stretch}
+    .a9937-floor-row .a57-floor{min-width:0}
+    .a9937-boss-btn{min-width:132px;border:1px solid #75442e;background:#25120c;color:#e6b38d;padding:6px 8px;cursor:pointer;font-size:9px}
+    .a9937-boss-btn:hover{border-color:#a76a45;color:#ffd2ad}
+    @media(max-width:700px){.a9937-floor-row{grid-template-columns:1fr}.a9937-boss-btn{min-height:36px}}
+  `;
+  document.head.appendChild(st);
+
+  window.__A9937_TEST__={
+    build:A9937_BUILD,
+    audit:a9937Audit,
+    enterFloor:a57EnterPrideFloor,
+    enterBoss:a9937EnterPrideBoss,
+    towerDrawer:a57PrideDrawer,
+    twilightDrawer:a59TianfaDrawer
+  };
+
+  a9937ApplyVersion();
+  try{if(state){renderDrawers();renderHUDDynamic()}}catch(e){console.error('Alpha99.37 refresh',e)}
+})();
+
 })();
 </script>
 
