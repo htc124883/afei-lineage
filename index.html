@@ -33961,6 +33961,251 @@ const A9938_BUILD='B1.0 Alpha99.38';
   try{if(state)renderDrawers()}catch(e){console.error('Alpha99.38 refresh',e)}
 })();
 
+
+// ===== B1.0 Alpha99.39：潔尼斯女王卡死 / 手機離線視窗死鎖修正 =====
+
+(()=>{const st=document.createElement('style');st.id='a9939-hotfix-style';st.textContent=`
+#a976-offline-modal:not(.open),#a47-offline-modal:not(.open),#a48-settle-overlay:not(.open){pointer-events:none!important}
+#a976-offline-modal.open{z-index:9000!important;pointer-events:auto!important}
+#a976-offline-modal #a976-report-close{position:relative!important;z-index:3!important;pointer-events:auto!important;touch-action:manipulation!important;-webkit-tap-highlight-color:transparent}
+#a69-boss-chest .a69-chest-x,#a69-boss-chest .a69-chest-ok{pointer-events:auto!important;touch-action:manipulation!important;-webkit-tap-highlight-color:transparent}
+`;document.head.appendChild(st)})();
+
+const A9939_BUILD='B1.0 Alpha99.39';
+(()=>{
+  let A9939_LAST_CLOSE_AT=0;
+
+  function a9939CloseOfflineUi(reason='manual',forceState=false){
+    for(const id of ['a976-offline-modal','a47-offline-modal','a48-settle-overlay']){
+      const el=document.getElementById(id);if(el)el.classList.remove('open');
+    }
+    if(state?.a45&&(forceState||!state.a45.offlineJob)){
+      state.a45.offlineSettling=false;
+      if(forceState)state.a45.offlineJob=null;
+    }
+    if(state){
+      state.a9939=state.a9939&&typeof state.a9939==='object'?state.a9939:{};
+      state.a9939.lastUiCleanupAt=Date.now();
+      state.a9939.lastUiCleanupReason=String(reason);
+    }
+    return true;
+  }
+
+  function a9939CloseEvent(e,reason){
+    if(e){try{e.preventDefault()}catch(_e){}try{e.stopPropagation()}catch(_e){}}
+    const now=Date.now();if(now-A9939_LAST_CLOSE_AT<120)return false;A9939_LAST_CLOSE_AT=now;
+    a9939CloseOfflineUi(reason,false);return false;
+  }
+
+  function a9939BindOfflineModal(){
+    const m=document.getElementById('a976-offline-modal');if(!m)return false;
+    const b=m.querySelector('#a976-report-close');
+    if(b){
+      b.setAttribute('type','button');
+      b.onclick=e=>a9939CloseEvent(e,'a976-confirm');
+      b.ontouchend=e=>a9939CloseEvent(e,'a976-touch-confirm');
+    }
+    m.onclick=e=>{if(e.target===m)a9939CloseEvent(e,'a976-backdrop')};
+    return true;
+  }
+
+  function a9939BindBossChest(){
+    const m=document.getElementById('a69-boss-chest');if(!m)return false;
+    const close=e=>{
+      if(e){try{e.preventDefault()}catch(_e){}try{e.stopPropagation()}catch(_e){}}
+      m.classList.remove('open');
+      try{a59RenderBossResultActions()}catch(_e){}
+      return false;
+    };
+    for(const sel of ['.a69-chest-x','.a69-chest-ok']){
+      const b=m.querySelector(sel);if(!b)continue;b.onclick=close;b.ontouchend=close;
+    }
+    m.onclick=e=>{if(e.target===m)close(e)};
+    return true;
+  }
+
+  function a9939IsRealHuntRunning(){
+    if(!state||state.dead||!state.running)return false;
+    try{if(a7IsVillage())return false}catch(e){}
+    if(state.boss?.active||state.boss?.fighting||mapTab==='worldboss')return false;
+    try{if(a30MapKind(state.mapId)!=='hunt')return false}catch(e){}
+    return true;
+  }
+
+  // 修復已經被舊版寫進存檔的「非狩獵背景狀態」。這正是重新登入後又彈 0 收益視窗的來源。
+  function a9939RepairFalseOfflineMarker(reason='repair',persist=true){
+    if(!state)return false;
+    const b=state.a36?.background;if(!b?.active||b.wasRunning===true)return false;
+    const now=Date.now(),elapsed=Math.max(0,now-Number(b.hiddenAt||now));
+    b.active=false;b.wasRunning=false;b.hiddenAt=0;b.mapId='';
+    b.resumeCount=Math.max(0,Number(b.resumeCount||0))+1;
+    b.lastResumeAt=now;b.lastElapsedMs=elapsed;b.lastReason='alpha99.39-'+String(reason);
+    b.lastReport='Alpha99.39 已忽略非狩獵狀態的背景時間，不產生離線結算。';
+    if(state.a45){
+      state.a45.offlineSettling=false;state.a45.offlineJob=null;
+      state.a45.foregroundStartRequested=false;state.a45.foregroundStopRequested=false;
+    }
+    if(state.a46){state.a46.offlineForcedStopAt=0;state.a46.offlineForcedStopReason=''}
+    try{if(typeof a46ReleaseOfflineOwner==='function')a46ReleaseOfflineOwner(a46ActiveSlot)}catch(e){}
+    a9939CloseOfflineUi('repair-false-offline-'+reason,true);
+    if(persist){try{save();a30Checkpoint('a9939-false-offline-repair',true)}catch(e){}}
+    return{fixed:true,elapsed,reason:String(reason)};
+  }
+
+  // Alpha36 舊邏輯會在「根本沒在一般狩獵」時也寫 background.active。
+  // 最終入口改成：只有真的正在一般狩獵才建立離線掛機標記；已經合法 active 的標記仍交回原流程。
+  const a9939PauseBase=a36PauseForBackground;
+  a36PauseForBackground=function(reason='visibility-hidden',now=Date.now()){
+    if(!state)return a9939PauseBase.apply(this,arguments);
+    const b=state.a36?.background;
+    if(b?.active)return a9939PauseBase.apply(this,arguments);
+    if(!a9939IsRealHuntRunning()){
+      if(b){b.active=false;b.wasRunning=false;b.lastReason='alpha99.39-ignore-'+String(reason)}
+      return{ignored:true,alpha9939:true,reason:String(reason),notActiveHunt:true};
+    }
+    return a9939PauseBase.apply(this,arguments);
+  };
+
+  // 舊存檔若已經留下 wasRunning=false 的 active marker，登入時直接清掉，絕不建立 0 收益報告。
+  const a9939ResumeBase=a36ResumeFromBackground;
+  a36ResumeFromBackground=function(reason='visibility-visible',now=Date.now(),notify=true){
+    if(state?.a36?.background?.active&&state.a36.background.wasRunning!==true){
+      const fixed=a9939RepairFalseOfflineMarker(reason,true);
+      return{ignored:true,alpha9939:true,repaired:!!fixed,elapsed:Number(fixed?.elapsed||0),resumed:false,wanted:false,sameMap:true,msg:'非狩獵狀態，不進行離線結算'};
+    }
+    return a9939ResumeBase.apply(this,arguments);
+  };
+
+  // Alpha47 與 Alpha97.6 原本會對同一份離線結算各開一個 Modal。
+  // 97.6 已是正式新版摘要，因此停用舊 Alpha47 自動彈窗，避免雙層遮罩造成假死。
+  if(typeof a47ShowOfflineReport==='function'){
+    const a9939OldA47Show=a47ShowOfflineReport;
+    a47ShowOfflineReport=function(report){
+      if(typeof a976ShowReport==='function'){
+        document.getElementById('a47-offline-modal')?.classList.remove('open');
+        return false;
+      }
+      return a9939OldA47Show.apply(this,arguments);
+    };
+  }
+
+  if(typeof a976EnsureModal==='function'){
+    const a9939EnsureOfflineBase=a976EnsureModal;
+    a976EnsureModal=function(){const m=a9939EnsureOfflineBase.apply(this,arguments);a9939BindOfflineModal();return m};
+  }
+  if(typeof a976ShowReport==='function'){
+    const a9939ShowOfflineBase=a976ShowReport;
+    a976ShowReport=function(raw){
+      document.getElementById('a47-offline-modal')?.classList.remove('open');
+      document.getElementById('a48-settle-overlay')?.classList.remove('open');
+      const r=a9939ShowOfflineBase.apply(this,arguments);a9939BindOfflineModal();return r;
+    };
+  }
+
+  // 世界王寶箱也補上 iOS touchend 關閉，避免擊殺後只剩遮罩可見卻無法操作。
+  if(typeof a69EnsureChest==='function'){
+    const a9939ChestBase=a69EnsureChest;
+    a69EnsureChest=function(){const m=a9939ChestBase.apply(this,arguments);a9939BindBossChest();return m};
+  }
+  if(typeof a69ShowBossChest==='function'){
+    const a9939ShowChestBase=a69ShowBossChest;
+    a69ShowBossChest=function(){a9939CloseOfflineUi('boss-chest-open',false);const r=a9939ShowChestBase.apply(this,arguments);a9939BindBossChest();return r};
+  }
+
+  // 潔尼斯女王 / 幻象眼魔擊殺後固定收斂成「已擊敗、等待玩家選返回」的穩定狀態。
+  const a9939DefeatBossBase=a43DefeatBoss;
+  a43DefeatBoss=function(...args){
+    const id=String(state?.boss?.id||''),floor=typeof a59PrideBossFloor==='function'?a59PrideBossFloor(id):0;
+    const r=a9939DefeatBossBase.apply(this,args);
+    if(state&&floor&&Number(state.boss?.hp||0)<=0){
+      state.running=false;state.boss.fighting=false;
+      state.boss.nextPlayerAt=state.boss.nextBossAt=state.boss.nextHealAt=0;
+      a9939RepairFalseOfflineMarker('pride-boss-defeated',false);
+      a9939CloseOfflineUi('pride-boss-defeated',true);
+      try{save()}catch(e){}
+      setTimeout(()=>{try{a59RenderBossResultActions();a9939BindBossChest();a43UpdateStartButtons()}catch(e){}},0);
+      setTimeout(()=>{try{a59RenderBossResultActions();a9939BindBossChest()}catch(e){}},260);
+    }
+    return r;
+  };
+
+  // 若玩家是在「已擊敗傲慢王」的卡死存檔上直接換新版，進角色時自動退回傲慢樓層選單。
+  function a9939RepairDefeatedPrideAfterReload(){
+    if(!state||!state.boss)return false;
+    const floor=typeof a59PrideBossFloor==='function'?a59PrideBossFloor(state.boss.id):0;
+    if(!floor||Number(state.boss.hp||0)>0||state.boss.fighting)return false;
+    const confirmed=Number(state.a59?.lastPrideBossClearFloor||0)===floor||String(state.a59?.lastPrideBossClearId||'')===String(state.boss.id||'');
+    if(!confirmed)return false;
+    try{if(typeof a59ClearPrideBossMode==='function')a59ClearPrideBossMode();else{state.boss.active=false;state.boss.entryPaid=false}}
+    catch(e){state.boss.active=false;state.boss.fighting=false;state.boss.entryPaid=false}
+    if(state.a57){state.a57.lastTowerFloor=floor;state.a57.prideBossRoomFloor=0}
+    mapTab='tower';
+    document.getElementById('a69-boss-chest')?.classList.remove('open');
+    a9939CloseOfflineUi('reload-after-pride-boss',true);
+    try{save();render();renderDrawers();updateBgm();a43UpdateStartButtons()}catch(e){}
+    return{fixed:true,floor};
+  }
+
+  if(typeof a46EnterSlot==='function'){
+    const a9939EnterSlotBase=a46EnterSlot;
+    a46EnterSlot=function(slot){
+      const r=a9939EnterSlotBase.apply(this,arguments);
+      if(r&&state){
+        a9939RepairFalseOfflineMarker('slot-enter',true);
+        const bossFix=a9939RepairDefeatedPrideAfterReload();
+        if(bossFix){try{toast('已修復上次世界王結算殘留，返回傲慢之塔。')}catch(e){}}
+      }
+      return r;
+    };
+  }
+
+  function a9939ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9939_BUILD}catch(e){document.title='樓梯口天堂 · '+A9939_BUILD}
+    const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9939_BUILD;
+    const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.39：修正傲慢世界王擊殺後的手機背景誤判、離線收益雙重遮罩與重新登入仍卡住問題。';
+    const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.39｜世界王卡死／離線遮罩死鎖修正｜PC＋手機';
+    try{a55InstallLoginVersionPanel()}catch(e){}
+    const info=document.querySelector('#a55-login-info .a55-login-info-body');
+    if(info)info.innerHTML='<b>'+A9939_BUILD+'</b><p>修正傲慢世界王擊殺後，手機切背景／重新整理可能被錯誤標記成一般離線掛機，造成 0 收益視窗反覆出現甚至遮住整個操作層。</p><p>同時停用舊 Alpha47 重複離線彈窗，只保留 Alpha97.6 新版摘要；確認鍵會一次清除殘留遮罩。已卡住的潔尼斯女王／幻象眼魔存檔登入時會自動解除王房殘留並回到傲慢樓層選單。</p><small>正常狩獵的離線掛網、24 小時上限、藥水／治療／補貨、世界王獎勵與冷卻均不改。</small>';
+  }
+
+  function a9939Audit(){
+    const b=state?.a36?.background||null;
+    const oldOpen=!!document.getElementById('a47-offline-modal')?.classList.contains('open');
+    const newOpen=!!document.getElementById('a976-offline-modal')?.classList.contains('open');
+    return{
+      ok:typeof a36PauseForBackground==='function'&&typeof a36ResumeFromBackground==='function'&&typeof a43DefeatBoss==='function',
+      build:A9939_BUILD,
+      background:b?{active:!!b.active,wasRunning:!!b.wasRunning,lastReason:String(b.lastReason||'')}:null,
+      duplicateOfflineModalOpen:oldOpen&&newOpen,
+      prideBoss:{id:String(state?.boss?.id||''),active:!!state?.boss?.active,fighting:!!state?.boss?.fighting,hp:Number(state?.boss?.hp||0)},
+      protections:['非狩獵不建立離線標記','wasRunning=false 舊存檔自動解鎖','Alpha47 舊離線彈窗停用','新版離線確認鍵清理所有殘留遮罩','傲慢王擊殺後穩定化','已擊敗王房卡死存檔登入自救']
+    };
+  }
+
+  const a9939RenderBase=render;
+  render=function(){const r=a9939RenderBase.apply(this,arguments);a9939ApplyVersion();a9939BindOfflineModal();a9939BindBossChest();return r};
+  const a9939InitBase=init;
+  init=function(){const r=a9939InitBase.apply(this,arguments);a9939ApplyVersion();a9939BindOfflineModal();a9939BindBossChest();return r};
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){a9939CloseOfflineUi('show-login',false);const r=b.apply(this,arguments);a9939ApplyVersion();return r}}
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){a9939CloseOfflineUi('show-slots',false);const r=b.apply(this,arguments);a9939ApplyVersion();return r}}
+
+  window.__A9939_TEST__={
+    build:A9939_BUILD,audit:a9939Audit,closeOffline:a9939CloseOfflineUi,
+    repairOffline:a9939RepairFalseOfflineMarker,repairBoss:a9939RepairDefeatedPrideAfterReload,
+    isRealHunt:a9939IsRealHuntRunning,bindOffline:a9939BindOfflineModal,bindBossChest:a9939BindBossChest,
+    pause:(reason='a9939-test',now=Date.now())=>a36PauseForBackground(reason,now),
+    resume:(reason='a9939-test',now=Date.now(),notify=false)=>a36ResumeFromBackground(reason,now,notify),
+    seedFalseOffline:(ms=5000)=>{if(!state)return false;a36EnsureState();const b=state.a36.background;b.active=true;b.wasRunning=false;b.hiddenAt=Date.now()-Math.max(1,Number(ms)||1);b.mapId=String(state.mapId||'');return true},
+    seedHunt:()=>{a76TestReset('knight',80);state.inVillage=false;state.dead=false;state.mapId='training';state.running=true;if(state.boss){state.boss.active=false;state.boss.fighting=false}a36EnsureState();state.a36.background.active=false;try{ensureMobs()}catch(e){}return true}
+  };
+
+  a9939CloseOfflineUi('boot',false);
+  a9939ApplyVersion();
+  a9939BindOfflineModal();a9939BindBossChest();
+})();
+
+
 })();
 </script>
 
