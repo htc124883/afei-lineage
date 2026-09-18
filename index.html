@@ -7027,7 +7027,7 @@ a45ProcessOffline=function(job,notify=true){
     if(state.dead)return a454FinishRemainder(job,notify,'character-dead');
     // 1~99ms 不足一個舊阿肥邏輯 tick：視為已走完真實時間，但不憑空多跑一個 tick。
     if(Number(job.remaining||0)<A45_OFFLINE_TICK_MS)return a454FinishRemainder(job,notify,'subtick-remainder');
-    const part=Math.min(A45_OFFLINE_CHUNK_MS,Number(job.remaining||0));
+    const part=Math.min(window.__A9949_THERMAL__?.exactSliceMs?.()||A45_OFFLINE_CHUNK_MS,Number(job.remaining||0));
     const before=a45OfflineSummaryBefore();
     const done=a45ReplayChunk(part);
     const delta=a45OfflineDiff(before);a45MergeAccum(job.accum,delta);
@@ -7038,8 +7038,12 @@ a45ProcessOffline=function(job,notify=true){
     state.running=false;state.a45.offlineJob=job;
     try{save();a30Checkpoint('a454-offline-chunk',true)}catch(e){}
     if(state.dead||Number(job.remaining||0)<A45_OFFLINE_TICK_MS)return a454FinishRemainder(job,notify,state.dead?'character-dead':'subtick-remainder');
-    A454_OFFLINE_TIMER=setTimeout(step,0);
+    A454_OFFLINE_TIMER=setTimeout(step,window.__A9949_THERMAL__?.delay?.('exact',0)||0);
   };
+  if(window.__A9949_THERMAL__?.mobile?.()){
+    A454_OFFLINE_TIMER=setTimeout(step,window.__A9949_THERMAL__?.delay?.('first',0)||16);
+    return{pending:true,elapsed:job.totalElapsed,remaining:job.remaining,thermalYield:true};
+  }
   step();
   return state.a45?.offlineSettling?{pending:true,elapsed:job.totalElapsed,remaining:job.remaining}:state.a45?.offlineLastReport||{pending:false};
 };
@@ -29011,8 +29015,12 @@ body.a9846-reference-ui #village-action.a972-open.a9880-trial-active .a9850-titl
       if(state.dead||Number(job.remaining||0)<A45_OFFLINE_TICK_MS)return finish(state.dead?'dead':'done');
       // 校準沒有擊殺時不憑空造收益；下一段仍會重新精確校準。
       // 為避免長時間同步阻塞，每段至少讓出一次事件迴圈。
-      A9881_TIMER=setTimeout(step,Math.max(0,performance.now()-wall0>A9881_MAX_WALL_STEP_MS?8:0));
+      A9881_TIMER=setTimeout(step,window.__A9949_THERMAL__?.delay?.('fast',performance.now()-wall0)??Math.max(0,performance.now()-wall0>A9881_MAX_WALL_STEP_MS?8:0));
     };
+    if(window.__A9949_THERMAL__?.mobile?.()){
+      A9881_TIMER=setTimeout(step,window.__A9949_THERMAL__?.delay?.('first',0)||16);
+      return{pending:true,fast:true,elapsed:job.totalElapsed,remaining:job.remaining,thermalYield:true};
+    }
     step();return state.a45?.offlineSettling?{pending:true,fast:true,elapsed:job.totalElapsed,remaining:job.remaining}:state.a45?.offlineLastReport||{pending:false};
   }
 
@@ -35223,7 +35231,529 @@ html.a9948-mobile-low #battle .a65-aoe{filter:none!important}
   if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);a9948ApplyVersion();return r}};
   if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);a9948ApplyVersion();return r}};
   if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);a9948ApplyVersion();return r}};
+
   window.__A9948_TEST__={build:A9948_BUILD,audit:a9948Audit,probe:a9948Probe,stats:a9948Stats,reset:a9948ResetCounters,setTestMobile:(v)=>{P.testMobile=v==null?null:!!v;a9948ApplyClasses();return a9948Stats()},sampleMs:(ms)=>{const n=performance.now();P.lastSample=n-Number(ms||0);a9948Sample(n);return a9948Stats()},forceRender:()=>{const old=P.force;P.force=true;try{renderBattleDynamic();renderHUDDynamic();renderLog()}finally{P.force=old}return a9948Stats()},startTestHunt:()=>{P.testMobile=true;a9948ApplyClasses();a76TestReset('elf',80);state.inVillage=false;state.mapId='training';state.running=true;state.learnedSkills=['sk_elf_triple'];state.equipment.wpn='wpn_3';state.inventory.wpn_22=9999;state.equipment.arrow='wpn_22';state.player.mp=state.player.maxMp;state.skillCooldown={};derive();spawnAll();P.force=true;try{render()}finally{P.force=false}a9948ResetCounters();return a9948Stats()},previous:window.__A9947_TEST__};
+})();
+
+// ===== Alpha99.49：手機多角色離線結算降溫排程 =====
+// 不改離線收益公式／100ms精確tick／高速混合演算法；只把手機結算工作切片並增加事件迴圈休息時間。
+const A9949_BUILD='B1.0 Alpha99.49';
+(()=>{
+  const T={testMobile:null,calls:{mobile:0,first:0,exact:0,fast:0,kill:0},exactSlice:3000,killSlice:40,firstDelay:12,exactDelay:8,fastDelay:16,killDelay:8,fastToken:0,fastProcessing:false};
+  function mobile(){
+    T.calls.mobile++;
+    if(T.testMobile!==null)return !!T.testMobile;
+    try{const s=window.__A9948_TEST__?.stats?.();if(s&&typeof s.mobile==='boolean'&&s.mobile)return true}catch(e){}
+    const ua=String(navigator?.userAgent||'');if(/Android|iPhone|iPad|iPod|Mobile/i.test(ua))return true;
+    try{return !!matchMedia?.('(pointer: coarse)')?.matches&&Math.min(Number(innerWidth||9999),Number(innerHeight||9999))<=1000}catch(e){return false}
+  }
+  function delay(kind='fast',wallMs=0){
+    if(kind in T.calls)T.calls[kind]++;
+    if(!mobile())return kind==='fast'&&Number(wallMs)>42?8:0;
+    if(kind==='first')return T.firstDelay;
+    if(kind==='exact')return T.exactDelay;
+    if(kind==='kill')return T.killDelay;
+    // 高速混合段做的工作越久，給手機越長休息；不改任何遊戲時間，只延長實際結算牆鐘時間。
+    return Number(wallMs)>80?80:Number(wallMs)>42?64:T.fastDelay;
+  }
+  function exactSliceMs(){return mobile()?T.exactSlice:A45_OFFLINE_CHUNK_MS}
+  function reset(){T.calls={mobile:0,first:0,exact:0,fast:0,kill:0};return stats()}
+  function stats(){return{build:A9949_BUILD,mobile:mobile(),exactSliceMs:exactSliceMs(),delays:{first:T.firstDelay,exact:T.exactDelay,fast:T.fastDelay,kill:T.killDelay},killSlice:T.killSlice,calls:{...T.calls},activeSlot:Number(typeof a46ActiveSlot==='undefined'?0:a46ActiveSlot),slots:Number(typeof A46_SLOT_COUNT==='undefined'?0:A46_SLOT_COUNT)}}
+  window.__A9949_THERMAL__={mobile,delay,exactSliceMs,stats,reset,setTestMobile:(v)=>{T.testMobile=v==null?null:!!v;return stats()}};
+
+  const A9949_PROCESS_BASE=a45ProcessOffline;
+  const a9949Wait=(ms)=>new Promise(r=>setTimeout(r,Math.max(0,Number(ms)||0)));
+  const a9949RoundMs=(ms)=>Math.max(0,Math.floor(Number(ms||0)/A45_OFFLINE_TICK_MS)*A45_OFFLINE_TICK_MS);
+  const a9949StochasticRound=(v)=>{v=Math.max(0,Number(v)||0);const f=Math.floor(v),r=v-f;return f+(Math.random()<r?1:0)};
+
+  async function a9949ReplayAsync(ms){
+    let remaining=a9949RoundMs(ms),done=0;
+    while(remaining>=A45_OFFLINE_TICK_MS&&!state?.dead){
+      const part=Math.min(T.exactSlice,remaining),d=a45ReplayChunk(part);done+=d;remaining-=d;
+      if(!(d>0)||d+1<part||state?.dead)break;
+      if(remaining>=A45_OFFLINE_TICK_MS)await a9949Wait(delay('exact',0));
+    }
+    return done;
+  }
+
+  async function a9949CalibrateAsync(maxMs){
+    maxMs=a9949RoundMs(maxMs);if(maxMs<A45_OFFLINE_TICK_MS)return{done:0,rateDone:0,kills:0,rateKills:0,consumed:{},stopped:false,minHp:0,potionHeals:0,healSkillCasts:0};
+    const consumedTotal={},oldTake=a8Take,oldAutoUse=a11AutoUseItem,oldCast=a11Cast,oldMobAttack=mobAttack;
+    const before={kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0),hp:Number(state.player?.hp||0),mp:Number(state.player?.mp||0),maxHp:Number(state.player?.maxHp||1),maxMp:Number(state.player?.maxMp||1),lv:Number(state.player?.lv||1),playerGold:Number(state.player?.gold||0)};
+    let done=0,requested=0,minHpTotal=before.hp,potionHealsTotal=0,healSkillCastsTotal=0;
+    const observeHp=()=>{if(state?.player)minHpTotal=Math.min(minHpTotal,Number(state.player.hp||0))};
+    a8Take=function(id,n=1){const pre=Number(a8Count(id)||0),r=oldTake.apply(this,arguments),post=Number(a8Count(id)||0),d=Math.max(0,pre-post);if(d>0)consumedTotal[id]=(consumedTotal[id]||0)+d;return r};
+    a11AutoUseItem=function(id){const hp0=Number(state.player?.hp||0),r=oldAutoUse.apply(this,arguments),hp1=Number(state.player?.hp||0);if(r&&hp1>hp0&&a8Item(id)?.type==='pot')potionHealsTotal++;observeHp();return r};
+    a11Cast=function(id,auto=false){const hp0=Number(state.player?.hp||0),sk=DATA.skills?.[id],r=oldCast.apply(this,arguments),hp1=Number(state.player?.hp||0);if(r&&sk?.type==='heal'&&hp1>hp0)healSkillCastsTotal++;observeHp();return r};
+    mobAttack=function(i){const r=oldMobAttack.apply(this,arguments);observeHp();return r};
+    let rateBefore=null,rateConsumedBase={},ratePotionBase=0,rateSkillBase=0,rateMinHp=before.hp,rateDone=0;
+    try{
+      const warm=Math.min(maxMs,30*1000);requested+=warm;done+=await a9949ReplayAsync(warm);
+      if(!state.dead&&done+1>=warm&&maxMs>done){
+        rateBefore={kills:Number(state.session?.kills||0),hp:Number(state.player?.hp||0),mp:Number(state.player?.mp||0),maxHp:Number(state.player?.maxHp||1),maxMp:Number(state.player?.maxMp||1)};
+        rateConsumedBase={...consumedTotal};ratePotionBase=potionHealsTotal;rateSkillBase=healSkillCastsTotal;rateMinHp=Number(state.player?.hp||0);minHpTotal=rateMinHp;
+        const steadyMeasure=state?.autoCombat?.healSkill?180*1000:90*1000,measure=Math.min(a9949RoundMs(maxMs-done),steadyMeasure);
+        if(measure>0){requested+=measure;const d=await a9949ReplayAsync(measure);done+=d;rateDone=d;rateMinHp=Math.min(rateMinHp,minHpTotal)}
+      }
+    }finally{a8Take=oldTake;a11AutoUseItem=oldAutoUse;a11Cast=oldCast;mobAttack=oldMobAttack}
+    const after={kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0),hp:Number(state.player?.hp||0),mp:Number(state.player?.mp||0),maxHp:Number(state.player?.maxHp||1),maxMp:Number(state.player?.maxMp||1),lv:Number(state.player?.lv||1),playerGold:Number(state.player?.gold||0)};
+    const haveRate=!!rateBefore&&rateDone>0,consumed={};
+    if(haveRate){for(const [id,n] of Object.entries(consumedTotal)){const d=Math.max(0,Number(n||0)-Number(rateConsumedBase[id]||0));if(d>0)consumed[id]=d}}else Object.assign(consumed,consumedTotal);
+    const rateKills=haveRate?Math.max(0,after.kills-rateBefore.kills):Math.max(0,after.kills-before.kills),hp0=haveRate?rateBefore.hp:before.hp,mp0=haveRate?rateBefore.mp:before.mp;
+    const potionHeals=haveRate?Math.max(0,potionHealsTotal-ratePotionBase):potionHealsTotal,healSkillCasts=haveRate?Math.max(0,healSkillCastsTotal-rateSkillBase):healSkillCastsTotal,minHp=haveRate?rateMinHp:minHpTotal;
+    return{done,rateDone:haveRate?rateDone:done,kills:Math.max(0,after.kills-before.kills),rateKills,exp:Math.max(0,after.exp-before.exp),gold:Math.max(0,after.gold-before.gold),items:Math.max(0,after.items-before.items),hp0,hp1:after.hp,minHp,mp0,mp1:after.mp,maxHp1:after.maxHp,maxMp1:after.maxMp,lv0:before.lv,lv1:after.lv,potionHeals,healSkillCasts,healingObserved:(potionHeals+healSkillCasts)>0,playerGold0:before.playerGold,playerGold1:after.playerGold,consumed,requested,warmupMs:Math.max(0,done-(haveRate?rateDone:0)),stopped:done+1<A45_OFFLINE_TICK_MS?true:(done+1<requested||!!state.dead||Number(state.player?.hp||0)<=0)};
+  }
+
+  async function a9949DirectKillBatchAsync(kills,durationMs){
+    kills=Math.max(0,Math.floor(Number(kills)||0));durationMs=Math.max(0,Number(durationMs)||0);if(!kills){A45_SIM_NOW+=durationMs;A45_SIM_EPOCH+=durationMs;return 0}
+    const oldRunning=!!state.running,oldTarget=Number(state.target||0),spacing=durationMs/Math.max(1,kills),oldShow=(typeof a67ShowDrop==='function'?a67ShowDrop:null);let done=0,lastClock=0,k=0;
+    try{
+      if(oldShow)a67ShowDrop=function(){};
+      while(k<kills&&!state.dead){
+        const end=Math.min(k+T.killSlice,kills);state.running=true;
+        a45WithQuietRuntime(()=>{for(;k<end;k++){if(state.dead)break;A45_SIM_NOW+=spacing;A45_SIM_EPOCH+=spacing;lastClock+=spacing;const x=newMob();if(!x)break;x.dead=false;x.hp=x.maxHp;state.mobs=Array.isArray(state.mobs)?state.mobs:Array(MOB_COUNT).fill(null);state.mobs[0]=x;state.target=0;const k0=Number(state.session?.kills||0);killMob(0);if(Number(state.session?.kills||0)>k0)done++;else break}});
+        state.running=false;
+        if(k<kills&&!state.dead){const x=state.mobs?.[0];if(x?.dead)x.respawnAt=Number.MAX_SAFE_INTEGER;await a9949Wait(delay('kill',0))}
+      }
+    }finally{if(oldShow)a67ShowDrop=oldShow;state.running=oldRunning;state.target=Math.max(0,Math.min(MOB_COUNT-1,oldTarget))}
+    if(lastClock<durationMs){const d=durationMs-lastClock;A45_SIM_NOW+=d;A45_SIM_EPOCH+=d}
+    try{spawnAll();a45NormalizeCombatClock(A45_SIM_NOW)}catch(e){}
+    return done;
+  }
+
+  function a9949MobileFastProcess(job,notify=true){
+    if(!state||!job||typeof job!=='object')return false;a45EnsureState();const token=++T.fastToken;T.fastProcessing=true;
+    state.a45.offlineSettling=true;state.a45.offlineJob=job;state.running=false;state.a9881=(state.a9881&&typeof state.a9881==='object')?state.a9881:{};
+    const cfg=window.__A9881_TEST__?.audit?.()||{},segmentMs=Math.max(60*1000,Number(cfg.segmentMs||30*60*1000));
+    const stat={build:A9949_BUILD,engine:'mobile-thermal-async',startedWall:performance.now(),exactMs:0,fastMs:0,directKills:0,segments:0,mapId:String(state.mapId||''),totalMs:Number(job.totalElapsed||0),yields:{exact:0,kill:0,segment:0}};
+    state.a9881.active=true;state.a9881.current=stat;
+    const run=async()=>{
+      try{
+        await a9949Wait(delay('first',0));
+        while(state&&token===T.fastToken&&state.a45?.offlineSettling&&!state.dead&&Number(job.remaining||0)>=A45_OFFLINE_TICK_MS){
+          const wall0=performance.now(),segmentBudget=Math.min(segmentMs,Number(job.remaining||0)),before=a45OfflineSummaryBefore();
+          const e0=T.calls.exact,k0=T.calls.kill,sample=await a9949CalibrateAsync(segmentBudget);stat.yields.exact+=Math.max(0,T.calls.exact-e0);stat.exactMs+=Number(sample.done||0);let processed=Number(sample.done||0),fastMs=0,batchKills=0;
+          if(!(sample.done>0))break;
+          if(!sample.stopped&&!state.dead&&Number(sample.rateKills??sample.kills)>0&&processed<segmentBudget){
+            fastMs=Number(window.__A9881_TEST__?.limit?.(sample,segmentBudget-processed)||0);
+            if(fastMs>0){const c=a45WithQuietRuntime(()=>window.__A9881_TEST__?.scaledConsumables?.(sample,fastMs));if(c&&Number(c.criticalFraction)<1)fastMs=a9949RoundMs(fastMs*Math.max(0,Number(c.criticalFraction)||0));
+              if(fastMs>0){const rateMs=Math.max(A45_OFFLINE_TICK_MS,Number(sample.rateDone||sample.done||0)),rateKills=Math.max(0,Number(sample.rateKills??sample.kills??0)),expected=rateKills*(fastMs/rateMs);batchKills=a9949StochasticRound(expected);batchKills=await a9949DirectKillBatchAsync(batchKills,fastMs);stat.yields.kill+=Math.max(0,T.calls.kill-k0);window.__A9881_TEST__?.trend?.(sample,fastMs);processed+=fastMs;stat.fastMs+=fastMs;stat.directKills+=batchKills}
+            }
+          }
+          const delta=a45OfflineDiff(before);a45MergeAccum(job.accum,delta);job.remaining=Math.max(0,Number(job.remaining||0)-processed);job.processed=Number(job.processed||0)+processed;stat.segments++;
+          if(processed>0&&state.a36?.background)state.a36.background.hiddenAt=Number(state.a36.background.hiddenAt||Date.now())+processed;
+          state.running=false;state.a45.offlineJob=job;state.a9881.current={...stat,lastSample:{ms:sample.done,rateMs:sample.rateDone,kills:sample.kills,rateKills:sample.rateKills,warmupMs:sample.warmupMs,hp0:sample.hp0,hp1:sample.hp1,minHp:sample.minHp,potionHeals:sample.potionHeals,healSkillCasts:sample.healSkillCasts},lastBatch:{ms:fastMs,kills:batchKills},wallStepMs:performance.now()-wall0};
+          try{save();a30Checkpoint('a9949-mobile-thermal-segment',true)}catch(e){}
+          if(state.dead||Number(job.remaining||0)<A45_OFFLINE_TICK_MS)break;stat.yields.segment++;await a9949Wait(delay('fast',performance.now()-wall0));
+        }
+        if(!state||token!==T.fastToken)return;
+        stat.wallMs=Math.max(0,performance.now()-stat.startedWall);stat.reason=state.dead?'dead':'done';state.a9881.current={...stat};T.fastProcessing=false;
+        a45FinishOffline(job,notify);
+      }catch(e){
+        T.fastProcessing=false;try{console.error('Alpha99.49 mobile offline thermal',e)}catch(_e){}
+        if(state&&token===T.fastToken){state.a45.offlineSettling=false;state.a45.offlineJob=job;state.a9881.active=false;state.a9881.current=null;A9949_PROCESS_BASE(job,notify)}
+      }
+    };
+    run();return{pending:true,fast:true,thermalAsync:true,elapsed:job.totalElapsed,remaining:job.remaining};
+  }
+
+  a45ProcessOffline=function(job,notify=true){
+    if(mobile()&&window.__A9881_TEST__?.canFast?.(Number(job?.remaining||0)))return a9949MobileFastProcess(job,notify);
+    return A9949_PROCESS_BASE(job,notify);
+  };
+
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9949_BUILD}catch(e){document.title='樓梯口天堂 · '+A9949_BUILD}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9949_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.49｜手機多角色離線結算降溫排程｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9949_BUILD+' · 手機離線結算降溫'}catch(e){}
+    try{window.__BUILD_VERSION__=A9949_BUILD;if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.mobileOfflineThermal='alpha99.49-yield-scheduler'}}catch(e){}
+  }
+  const oldOverlay=typeof a48UpdateSettleOverlay==='function'?a48UpdateSettleOverlay:null;
+  if(oldOverlay)a48UpdateSettleOverlay=function(){
+    const r=oldOverlay.apply(this,arguments);
+    if(mobile()&&state?.a45?.offlineSettling){const em=document.querySelector('#a48-settle-overlay em');if(em)em.textContent='手機降溫結算：收益規則不變，CPU 工作分段執行並主動讓出畫面時間，避免切角色時長時間滿載。'}
+    return r;
+  };
+  function audit(){
+    const issues=[];
+    if(A45_OFFLINE_TICK_MS!==100)issues.push('精確離線 tick 已被改動');
+    if(A46_OFFLINE_CAP_MS!==86400000)issues.push('24小時離線上限已被改動');
+    if(A46_SLOT_COUNT!==4)issues.push('角色槽數量不是4');
+    if(typeof a45ReplayChunk!=='function'||typeof a45ProcessOffline!=='function')issues.push('離線核心 API 遺失');
+    if(window.__A9869_TEST__?.audit?.()?.owner!==0)issues.push('四角色獨立掛網 owner 政策異常');
+    const p48=window.__A9948_TEST__?.audit?.();if(p48?.ok!==true)issues.push('Alpha99.48 手機前景效能核心回歸');
+    return{ok:issues.length===0,build:A9949_BUILD,issues,exactTickMs:A45_OFFLINE_TICK_MS,capMs:A46_OFFLINE_CAP_MS,slots:A46_SLOT_COUNT,thermal:stats(),previous:p48};
+  }
+  async function probe(){
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      T.testMobile=true;reset();
+      add('手機精確結算切片=3秒',exactSliceMs()===3000,{slice:exactSliceMs()});
+      add('手機首次結算先讓出事件迴圈',delay('first',0)>=8,{delay:delay('first',0)});
+      add('手機精確段間有休息',delay('exact',0)>=6,{delay:delay('exact',0)});
+      add('手機高速段間有休息',delay('fast',20)>=12&&delay('fast',100)>=80,{normal:delay('fast',20),heavy:delay('fast',100)});
+      T.testMobile=false;
+      add('桌面精確結算維持原5分鐘上限',exactSliceMs()===A45_OFFLINE_CHUNK_MS,{slice:exactSliceMs(),base:A45_OFFLINE_CHUNK_MS});
+      add('桌面一般高速段不額外延遲',delay('fast',20)===0,{delay:delay('fast',20)});
+      const a=audit();add('核心規則/四角色/Alpha99.48回歸',a.ok,a);
+      const m=window.__A9869_TEST__?.audit?.();add('四角色仍為獨立離線時間戳',m?.ok===true&&Number(m?.slots)===4&&Number(m?.owner)===0,m||{});
+    }catch(e){add('Alpha99.49 probe exception',false,{error:String(e?.stack||e)})}
+    finally{T.testMobile=null;applyVersion()}
+    return{ok:rows.every(x=>x.ok),build:A9949_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+  async function runtimeProbe(asMobile=true,simMs=60000,seed=123456){
+    simMs=Math.max(1000,Math.floor(Number(simMs)||60000));
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null;
+    const active=typeof a46ActiveSlot==='undefined'?0:a46ActiveSlot,pendingSlot=typeof a46PendingSlot==='undefined'?0:a46PendingSlot,oldRand=Math.random,oldTest=T.testMobile,hadRaf=typeof raf!=='undefined'&&!!raf;
+    let beatTimer=0,beats=0,maxGap=0,lastBeat=performance.now();
+    try{
+      if(hadRaf){try{cancelAnimationFrame(raf)}catch(e){};raf=0}
+      T.testMobile=!!asMobile;reset();let x=(Number(seed)||1)>>>0;Math.random=()=>{x=(Math.imul(x,1664525)+1013904223)>>>0;return x/4294967296};
+      a76TestReset('knight',80);state.inVillage=false;state.mapId='training';state.lastHuntMap='training';state.dead=false;state.running=false;derive();
+      state.player.maxHp=1e9;state.player.hp=1e9;state.player.maxMp=1e9;state.player.mp=1e9;state.player.exp=-1e12;spawnAll();a45EnsureState();
+      state.a36.background={...(state.a36.background||{}),active:true,wasRunning:true,mapId:state.mapId,hiddenAt:1700000000000};state.a45.offlineSettling=false;state.a45.offlineJob=null;A45_SIM_NOW=0;A45_SIM_EPOCH=1700000000000;
+      const before={kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0),hp:Number(state.player.hp||0),mp:Number(state.player.mp||0)};
+      beatTimer=setInterval(()=>{const n=performance.now();maxGap=Math.max(maxGap,n-lastBeat);lastBeat=n;beats++},5);
+      const job={reason:'a9949-runtime-probe',totalElapsed:simMs,remaining:simMs,processed:0,wanted:true,sameMap:true,accum:{kills:0,exp:0,gold:0,items:{}}};
+      const t=performance.now(),immediate=a45ProcessOffline(job,false),deadline=t+45000;
+      while(state?.a45?.offlineSettling&&performance.now()<deadline)await new Promise(r=>setTimeout(r,5));
+      const wallMs=performance.now()-t,after={kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0),hp:Number(state.player.hp||0),mp:Number(state.player.mp||0)};
+      return{ok:!state?.a45?.offlineSettling,build:A9949_BUILD,mobile:!!asMobile,simMs,wallMs,beats,maxGap,immediate,before,after,report:state?.a45?.offlineLastReport||null,thermal:stats(),fastLast:state?.a9881?.last||null};
+    }catch(e){return{ok:false,build:A9949_BUILD,mobile:!!asMobile,simMs,error:String(e?.stack||e),beats,maxGap,thermal:stats()}}
+    finally{
+      if(beatTimer)clearInterval(beatTimer);Math.random=oldRand;T.testMobile=oldTest;A45_SIM_NOW=0;A45_SIM_EPOCH=0;
+      try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pendingSlot;if(snap){state=snap;derive();render()}else state=null}catch(e){}
+      if(hadRaf&&typeof raf!=='undefined'&&!raf){try{last=performance.now();raf=requestAnimationFrame(loop)}catch(e){}}
+      applyVersion();
+    }
+  }
+
+  applyVersion();
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  const rb=render;render=function(){const r=rb.apply(this,arguments);applyVersion();return r};
+  window.__A9949_TEST__={build:A9949_BUILD,audit,probe,runtimeProbe,stats,setTestMobile:(v)=>window.__A9949_THERMAL__.setTestMobile(v),previous:window.__A9948_TEST__};
+})();
+
+
+// ===== Alpha99.50：手機離線真正低運算量 =====
+// 核心方向：不是單純拉長休息，而是減少「重複精確校準」的總計算量。
+// 長時間離線：只在必要時做一次 30s 暖機 + 90/180s 穩態校準，之後盡量沿用 Alpha98.81 的高速混合模型；
+// 只有遇到資源不足、安全門檻、6000 擊殺批次上限或模型不安全時才重新校準。
+// 不改：100ms 精確 replay 基礎、24h 上限、killMob/rollDrop、EXP/金幣/掉落、補血/補貨規則。
+const A9950_BUILD='B1.0 Alpha99.50';
+(()=>{
+  const P={testMobile:null,token:0,processing:false,last:null};
+  const BASE_PROCESS=a45ProcessOffline;
+  const TICK=A45_OFFLINE_TICK_MS;
+
+  function mobile(){
+    if(P.testMobile!==null)return !!P.testMobile;
+    try{
+      const s=window.__A9948_TEST__?.stats?.();
+      if(s&&typeof s.mobile==='boolean')return !!s.mobile;
+    }catch(e){}
+    const ua=String(navigator?.userAgent||'');
+    if(/Android|iPhone|iPad|iPod|Mobile/i.test(ua))return true;
+    try{return !!matchMedia?.('(pointer: coarse)')?.matches&&Math.min(Number(innerWidth||9999),Number(innerHeight||9999))<=1000}catch(e){return false}
+  }
+  const roundMs=(ms)=>Math.max(0,Math.floor(Number(ms||0)/TICK)*TICK);
+  const wait0=()=>new Promise(r=>setTimeout(r,0));
+  const stochastic=(v)=>{v=Math.max(0,Number(v)||0);const f=Math.floor(v),q=v-f;return f+(Math.random()<q?1:0)};
+
+  async function replayResponsive(ms,stat){
+    let rem=roundMs(ms),done=0;
+    while(rem>=TICK&&!state?.dead){
+      // 每次最多重播 30 秒遊戲時間；只有這一小塊真的花超過一幀才讓出事件迴圈。
+      const part=Math.min(30000,rem),w0=performance.now(),d=a45ReplayChunk(part),wall=performance.now()-w0;
+      done+=d;rem-=d;stat.exactChunks++;
+      if(!(d>0)||d+1<part||state?.dead)break;
+      if(rem>=TICK&&wall>14){stat.yields++;await wait0()}
+    }
+    return done;
+  }
+
+  async function calibrate(maxMs,stat){
+    maxMs=roundMs(maxMs);
+    if(maxMs<TICK)return{done:0,rateDone:0,kills:0,rateKills:0,consumed:{},stopped:false,minHp:0,potionHeals:0,healSkillCasts:0};
+    const consumedTotal={},oldTake=a8Take,oldAutoUse=a11AutoUseItem,oldCast=a11Cast,oldMobAttack=mobAttack;
+    const before={
+      kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0),
+      hp:Number(state.player?.hp||0),mp:Number(state.player?.mp||0),maxHp:Number(state.player?.maxHp||1),maxMp:Number(state.player?.maxMp||1),
+      lv:Number(state.player?.lv||1),playerGold:Number(state.player?.gold||0)
+    };
+    let done=0,requested=0,minHpTotal=before.hp,potionHealsTotal=0,healSkillCastsTotal=0;
+    const observeHp=()=>{if(state?.player)minHpTotal=Math.min(minHpTotal,Number(state.player.hp||0))};
+    a8Take=function(id,n=1){
+      const pre=Number(a8Count(id)||0),r=oldTake.apply(this,arguments),post=Number(a8Count(id)||0),d=Math.max(0,pre-post);
+      if(d>0)consumedTotal[id]=(consumedTotal[id]||0)+d;return r;
+    };
+    a11AutoUseItem=function(id){
+      const hp0=Number(state.player?.hp||0),r=oldAutoUse.apply(this,arguments),hp1=Number(state.player?.hp||0);
+      if(r&&hp1>hp0&&a8Item(id)?.type==='pot')potionHealsTotal++;observeHp();return r;
+    };
+    a11Cast=function(id,auto=false){
+      const hp0=Number(state.player?.hp||0),sk=DATA.skills?.[id],r=oldCast.apply(this,arguments),hp1=Number(state.player?.hp||0);
+      if(r&&sk?.type==='heal'&&hp1>hp0)healSkillCastsTotal++;observeHp();return r;
+    };
+    mobAttack=function(i){const r=oldMobAttack.apply(this,arguments);observeHp();return r};
+
+    let rateBefore=null,rateConsumedBase={},ratePotionBase=0,rateSkillBase=0,rateMinHp=before.hp,rateDone=0;
+    try{
+      const warm=Math.min(maxMs,30000);requested+=warm;done+=await replayResponsive(warm,stat);
+      if(!state.dead&&done+1>=warm&&maxMs>done){
+        rateBefore={
+          kills:Number(state.session?.kills||0),hp:Number(state.player?.hp||0),mp:Number(state.player?.mp||0),
+          maxHp:Number(state.player?.maxHp||1),maxMp:Number(state.player?.maxMp||1)
+        };
+        rateConsumedBase={...consumedTotal};ratePotionBase=potionHealsTotal;rateSkillBase=healSkillCastsTotal;
+        rateMinHp=Number(state.player?.hp||0);minHpTotal=rateMinHp;
+        const steady=state?.autoCombat?.healSkill?180000:90000,measure=Math.min(roundMs(maxMs-done),steady);
+        if(measure>0){requested+=measure;const d=await replayResponsive(measure,stat);done+=d;rateDone=d;rateMinHp=Math.min(rateMinHp,minHpTotal)}
+      }
+    }finally{
+      a8Take=oldTake;a11AutoUseItem=oldAutoUse;a11Cast=oldCast;mobAttack=oldMobAttack;
+    }
+    const after={
+      kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0),
+      hp:Number(state.player?.hp||0),mp:Number(state.player?.mp||0),maxHp:Number(state.player?.maxHp||1),maxMp:Number(state.player?.maxMp||1),
+      lv:Number(state.player?.lv||1),playerGold:Number(state.player?.gold||0)
+    };
+    const haveRate=!!rateBefore&&rateDone>0,consumed={};
+    if(haveRate){
+      for(const [id,n] of Object.entries(consumedTotal)){
+        const d=Math.max(0,Number(n||0)-Number(rateConsumedBase[id]||0));if(d>0)consumed[id]=d;
+      }
+    }else Object.assign(consumed,consumedTotal);
+    const rateKills=haveRate?Math.max(0,after.kills-rateBefore.kills):Math.max(0,after.kills-before.kills);
+    const hp0=haveRate?rateBefore.hp:before.hp,mp0=haveRate?rateBefore.mp:before.mp;
+    const potionHeals=haveRate?Math.max(0,potionHealsTotal-ratePotionBase):potionHealsTotal;
+    const healSkillCasts=haveRate?Math.max(0,healSkillCastsTotal-rateSkillBase):healSkillCastsTotal;
+    const minHp=haveRate?rateMinHp:minHpTotal;
+    return{
+      done,rateDone:haveRate?rateDone:done,kills:Math.max(0,after.kills-before.kills),rateKills,
+      exp:Math.max(0,after.exp-before.exp),gold:Math.max(0,after.gold-before.gold),items:Math.max(0,after.items-before.items),
+      hp0,hp1:after.hp,minHp,mp0,mp1:after.mp,maxHp1:after.maxHp,maxMp1:after.maxMp,lv0:before.lv,lv1:after.lv,
+      potionHeals,healSkillCasts,healingObserved:(potionHeals+healSkillCasts)>0,
+      playerGold0:before.playerGold,playerGold1:after.playerGold,consumed,requested,
+      warmupMs:Math.max(0,done-(haveRate?rateDone:0)),
+      stopped:done+1<TICK?true:(done+1<requested||!!state.dead||Number(state.player?.hp||0)<=0)
+    };
+  }
+
+  function a9950TrialOrTrackingActive(){
+    if(state?.tracking&&Number(state.tracking.until||0)>Date.now())return true;
+    return Number(state?.trial50?.[state?.player?.cls]||0)>0;
+  }
+
+  async function directKillsResponsive(kills,durationMs,stat){
+    kills=Math.max(0,Math.floor(Number(kills)||0));durationMs=Math.max(0,Number(durationMs)||0);
+    if(!kills){A45_SIM_NOW+=durationMs;A45_SIM_EPOCH+=durationMs;return 0}
+    const oldRunning=!!state.running,oldTarget=Number(state.target||0),oldShow=(typeof a67ShowDrop==='function'?a67ShowDrop:null);
+    const oldA35=typeof a35EnsureState==='function'?a35EnsureState:null;
+    const oldA975=typeof a975EnsureState==='function'?a975EnsureState:null;
+    const oldA980=typeof a980EnsureState==='function'?a980EnsureState:null;
+    const oldTrial=typeof a9TrialDrop==='function'?a9TrialDrop:null;
+    const spacing=durationMs/Math.max(1,kills);let done=0,lastClock=0,k=0;
+    try{
+      // 這些 ensure 在完整擊殺鏈裡原本每隻怪都會重跑，但高速離線批次期間裝備/精通資料結構不會突然換 schema。
+      // 先做一次正式 ensure，再把「重建相同物件」的部分暫時變成 no-op；擊殺進度本身仍由既有 killMob wrapper 更新。
+      try{oldA35?.()}catch(e){}
+      try{oldA975?.()}catch(e){}
+      try{oldA980?.()}catch(e){}
+      if(oldA35)a35EnsureState=function(){return state?.a35||null};
+      if(oldA975)a975EnsureState=function(){return state?.mastery||null};
+      if(oldA980)a980EnsureState=function(){return state?.mastery||null};
+      if(oldTrial&&!a9950TrialOrTrackingActive())a9TrialDrop=function(){};
+      if(oldShow)a67ShowDrop=function(){};
+
+      while(k<kills&&!state.dead){
+        const end=Math.min(k+60,kills),w0=performance.now();state.running=true;
+        a45WithQuietRuntime(()=>{
+          for(;k<end;k++){
+            if(state.dead)break;
+            A45_SIM_NOW+=spacing;A45_SIM_EPOCH+=spacing;lastClock+=spacing;
+            const x=newMob();if(!x)break;x.dead=false;x.hp=x.maxHp;
+            state.mobs=Array.isArray(state.mobs)?state.mobs:Array(MOB_COUNT).fill(null);state.mobs[0]=x;state.target=0;
+            const k0=Number(state.session?.kills||0);killMob(0);if(Number(state.session?.kills||0)>k0)done++;else break;
+          }
+        });
+        state.running=false;stat.killChunks++;
+        if(k<kills&&!state.dead&&performance.now()-w0>14){stat.yields++;await wait0()}
+      }
+    }finally{
+      if(oldShow)a67ShowDrop=oldShow;
+      if(oldA35)a35EnsureState=oldA35;
+      if(oldA975)a975EnsureState=oldA975;
+      if(oldA980)a980EnsureState=oldA980;
+      if(oldTrial)a9TrialDrop=oldTrial;
+      state.running=oldRunning;state.target=Math.max(0,Math.min(MOB_COUNT-1,oldTarget));
+    }
+    if(lastClock<durationMs){const d=durationMs-lastClock;A45_SIM_NOW+=d;A45_SIM_EPOCH+=d}
+    try{spawnAll();a45NormalizeCombatClock(A45_SIM_NOW)}catch(e){}
+    return done;
+  }
+
+  function a9950SampleReusable(sample){
+    if(!sample||sample.stopped||state?.dead)return false;
+    const maxHp=Math.max(1,Number(sample.maxHp1||state?.player?.maxHp||1)),maxMp=Math.max(1,Number(sample.maxMp1||state?.player?.maxMp||1));
+    const minHp=Number(sample.minHp??sample.hp1??0),hp1=Number(sample.hp1||0),dh=Number(sample.hp1||0)-Number(sample.hp0||0),dm=Number(sample.mp1||0)-Number(sample.mp0||0);
+    if(sample.healingObserved)return minHp>=maxHp*.25&&hp1>=maxHp*.30;
+    // 沒有補血時只允許「樣本期間生命/魔力幾乎沒有漂移」的狀態重用，避免把危險角色一路快轉到底。
+    return Math.abs(dh)<=maxHp*.02&&Math.abs(dm)<=maxMp*.05&&minHp>=maxHp*.35;
+  }
+
+  function fastProcess(job,notify=true){
+    if(!state||!job||typeof job!=='object')return false;
+    a45EnsureState();
+    const token=++P.token;P.processing=true;
+    state.a45.offlineSettling=true;state.a45.offlineJob=job;state.running=false;
+    state.a9881=(state.a9881&&typeof state.a9881==='object')?state.a9881:{};
+    const stat={
+      build:A9950_BUILD,engine:'mobile-low-compute-hybrid',startedWall:performance.now(),
+      totalMs:Number(job.totalElapsed||0),exactMs:0,fastMs:0,directKills:0,calibrations:0,
+      exactChunks:0,killChunks:0,yields:0,segments:0,mapId:String(state.mapId||'')
+    };
+    state.a9881.active=true;state.a9881.current=stat;
+
+    const run=async()=>{
+      try{
+        await wait0();
+        while(state&&token===P.token&&state.a45?.offlineSettling&&!state.dead&&Number(job.remaining||0)>=TICK){
+          const before=a45OfflineSummaryBefore(),remaining0=Number(job.remaining||0),wall0=performance.now();
+          // 99.50：一次校準後，只要生命/魔力/補給仍屬穩態，就連續吃完多個 6000-kill 高速批次，不再每批重做 30s+90/180s 校準。
+          const sample=await calibrate(remaining0,stat);stat.calibrations++;stat.exactMs+=Number(sample.done||0);
+          let processed=Number(sample.done||0),fastTotal=0,killsTotal=0,batches=0,resourceShort=false;
+          if(!(sample.done>0))break;
+          const reusable=a9950SampleReusable(sample);
+          while(!sample.stopped&&!state.dead&&Number(sample.rateKills??sample.kills)>0&&processed<remaining0){
+            let fastMs=Number(window.__A9881_TEST__?.limit?.(sample,remaining0-processed)||0);if(!(fastMs>0))break;
+            const c=a45WithQuietRuntime(()=>window.__A9881_TEST__?.scaledConsumables?.(sample,fastMs));
+            if(c&&Number(c.criticalFraction)<1){resourceShort=true;fastMs=roundMs(fastMs*Math.max(0,Number(c.criticalFraction)||0))}
+            if(!(fastMs>0))break;
+            const rateMs=Math.max(TICK,Number(sample.rateDone||sample.done||0)),rateKills=Math.max(0,Number(sample.rateKills??sample.kills??0));
+            let batchKills=stochastic(rateKills*(fastMs/rateMs));batchKills=await directKillsResponsive(batchKills,fastMs,stat);
+            window.__A9881_TEST__?.trend?.(sample,fastMs);
+            processed+=fastMs;fastTotal+=fastMs;killsTotal+=batchKills;stat.fastMs+=fastMs;stat.directKills+=batchKills;batches++;
+            // 只有真正穩態才可重用；資源不足、HP/MP 已接近安全線或批次過多時回到重新校準。
+            const hpMax=Math.max(1,Number(state.player?.maxHp||1)),mpMax=Math.max(1,Number(state.player?.maxMp||1));
+            if(!reusable||resourceShort||Number(state.player?.hp||0)<hpMax*.35||Number(state.player?.mp||0)<mpMax*.08||batches>=6)break;
+          }
+          const delta=a45OfflineDiff(before);a45MergeAccum(job.accum,delta);
+          job.remaining=Math.max(0,remaining0-processed);job.processed=Number(job.processed||0)+processed;stat.segments++;
+          if(processed>0&&state.a36?.background)state.a36.background.hiddenAt=Number(state.a36.background.hiddenAt||Date.now())+processed;
+          state.running=false;state.a45.offlineJob=job;
+          state.a9881.current={...stat,lastSample:{ms:sample.done,rateMs:sample.rateDone,kills:sample.kills,rateKills:sample.rateKills,warmupMs:sample.warmupMs,hp0:sample.hp0,hp1:sample.hp1,minHp:sample.minHp,potionHeals:sample.potionHeals,healSkillCasts:sample.healSkillCasts,reusable},lastBatch:{ms:fastTotal,kills:killsTotal,batches,resourceShort},wallStepMs:performance.now()-wall0};
+          try{save();a30Checkpoint('a9950-low-compute-segment',true)}catch(e){}
+          if(state.dead||Number(job.remaining||0)<TICK)break;
+          stat.yields++;await wait0();
+        }
+        if(!state||token!==P.token)return;
+        stat.wallMs=Math.max(0,performance.now()-stat.startedWall);stat.reason=state.dead?'dead':'done';
+        state.a9881.current={...stat};P.last={...stat};P.processing=false;
+        a45FinishOffline(job,notify);
+      }catch(e){
+        P.processing=false;
+        try{console.error('Alpha99.50 low compute offline',e)}catch(_e){}
+        if(state&&token===P.token){
+          state.a45.offlineSettling=false;state.a45.offlineJob=job;state.a9881.active=false;state.a9881.current=null;
+          BASE_PROCESS(job,notify);
+        }
+      }
+    };
+    run();
+    return{pending:true,fast:true,lowCompute:true,elapsed:job.totalElapsed,remaining:job.remaining};
+  }
+
+  a45ProcessOffline=function(job,notify=true){
+    if(mobile()&&window.__A9881_TEST__?.canFast?.(Number(job?.remaining||0)))return fastProcess(job,notify);
+    return BASE_PROCESS(job,notify);
+  };
+
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9950_BUILD}catch(e){document.title='樓梯口天堂 · '+A9950_BUILD}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9950_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.50｜手機離線真正低運算量｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9950_BUILD+' · 手機離線低運算'}catch(e){}
+    try{window.__BUILD_VERSION__=A9950_BUILD;if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.mobileOfflineCompute='alpha99.50-single-calibration-hybrid'}}catch(e){}
+  }
+
+  const overlayBase=typeof a48UpdateSettleOverlay==='function'?a48UpdateSettleOverlay:null;
+  if(overlayBase)a48UpdateSettleOverlay=function(){
+    const r=overlayBase.apply(this,arguments);
+    if(mobile()&&state?.a45?.offlineSettling){
+      const em=document.querySelector('#a48-settle-overlay em');
+      if(em)em.textContent='低運算結算：先短時間精確校準，長時間部分直接高速批次計算；不再每30分鐘重做整套校準。';
+    }
+    return r;
+  };
+
+  function audit(){
+    const issues=[];
+    if(TICK!==100)issues.push('100ms 精確 replay 基礎被改動');
+    if(A46_OFFLINE_CAP_MS!==86400000)issues.push('24小時離線上限被改動');
+    if(A46_SLOT_COUNT!==4)issues.push('角色槽數量不是4');
+    if(typeof killMob!=='function'||typeof rollDrop!=='function')issues.push('戰鬥獎勵核心遺失');
+    const p48=window.__A9948_TEST__?.audit?.();if(p48?.ok!==true)issues.push('Alpha99.48 前景效能核心回歸');
+    const multi=window.__A9869_TEST__?.audit?.();if(multi?.ok!==true||Number(multi?.owner)!==0)issues.push('四角色獨立離線政策異常');
+    return{ok:issues.length===0,build:A9950_BUILD,issues,exactTickMs:TICK,capMs:A46_OFFLINE_CAP_MS,slots:A46_SLOT_COUNT,mobile:mobile(),previous:p48,multi};
+  }
+
+  async function runtimeProbe(simMs=2*60*60*1000,seed=123456){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null;
+    const active=typeof a46ActiveSlot==='undefined'?0:a46ActiveSlot,pending=typeof a46PendingSlot==='undefined'?0:a46PendingSlot;
+    const oldRand=Math.random,oldTest=P.testMobile,hadRaf=typeof raf!=='undefined'&&!!raf;let beat=0,beatTimer=0,maxGap=0,lastBeat=performance.now();
+    try{
+      if(hadRaf){try{cancelAnimationFrame(raf)}catch(e){};raf=0}
+      P.testMobile=true;let x=(Number(seed)||1)>>>0;Math.random=()=>{x=(Math.imul(x,1664525)+1013904223)>>>0;return x/4294967296};
+      a76TestReset('knight',80);state.inVillage=false;state.mapId='training';state.lastHuntMap='training';state.dead=false;state.running=false;derive();
+      state.player.maxHp=1e9;state.player.hp=1e9;state.player.maxMp=1e9;state.player.mp=1e9;state.player.exp=-1e12;spawnAll();a45EnsureState();
+      state.a36.background={...(state.a36.background||{}),active:true,wasRunning:true,mapId:state.mapId,hiddenAt:1700000000000};
+      state.a45.offlineSettling=false;state.a45.offlineJob=null;A45_SIM_NOW=0;A45_SIM_EPOCH=1700000000000;
+      const before={kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0)};
+      beatTimer=setInterval(()=>{const n=performance.now();maxGap=Math.max(maxGap,n-lastBeat);lastBeat=n;beat++},5);
+      const job={reason:'a9950-runtime-probe',totalElapsed:simMs,remaining:simMs,processed:0,wanted:true,sameMap:true,accum:{kills:0,exp:0,gold:0,items:{}}};
+      const t=performance.now(),immediate=a45ProcessOffline(job,false),deadline=t+30000;
+      while(state?.a45?.offlineSettling&&performance.now()<deadline)await new Promise(r=>setTimeout(r,5));
+      const wallMs=performance.now()-t,after={kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0)};
+      return{ok:!state?.a45?.offlineSettling,build:A9950_BUILD,simMs,wallMs,beat,maxGap,immediate,before,after,last:P.last||state?.a9881?.last||null,audit:audit()};
+    }catch(e){return{ok:false,build:A9950_BUILD,simMs,error:String(e?.stack||e),beat,maxGap}}
+    finally{
+      if(beatTimer)clearInterval(beatTimer);Math.random=oldRand;P.testMobile=oldTest;A45_SIM_NOW=0;A45_SIM_EPOCH=0;
+      try{
+        if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage);
+        if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;
+        if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;
+        if(snap){state=snap;derive();render()}else state=null;
+      }catch(e){}
+      if(hadRaf&&typeof raf!=='undefined'&&!raf){try{last=performance.now();raf=requestAnimationFrame(loop)}catch(e){}}
+      applyVersion();
+    }
+  }
+
+  async function probe(){
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      P.testMobile=true;
+      const a=audit();add('核心規則與四角色政策',a.ok,a);
+      add('高速混合模型 API 可用',typeof window.__A9881_TEST__?.limit==='function'&&typeof window.__A9881_TEST__?.scaledConsumables==='function',{api:true});
+      add('100ms精確基礎保留',TICK===100,{tick:TICK});
+      add('24小時上限保留',A46_OFFLINE_CAP_MS===86400000,{cap:A46_OFFLINE_CAP_MS});
+      const p48=await window.__A9948_TEST__?.probe?.();add('Alpha99.48手機前景效能回歸',p48?.ok===true,{passed:p48?.passed,total:p48?.total});
+    }catch(e){add('Alpha99.50 probe exception',false,{error:String(e?.stack||e)})}
+    finally{P.testMobile=null;applyVersion()}
+    return{ok:rows.every(x=>x.ok),build:A9950_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+
+  applyVersion();
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  const rb=render;render=function(){const r=rb.apply(this,arguments);applyVersion();return r};
+
+  window.__A9950_TEST__={build:A9950_BUILD,audit,probe,runtimeProbe,setTestMobile:(v)=>{P.testMobile=v==null?null:!!v;return{mobile:mobile()}},last:()=>P.last,previous:window.__A9949_TEST__};
 })();
 
 
