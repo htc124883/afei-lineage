@@ -15773,7 +15773,7 @@ function a972MobImage(id,m){
   try{return mobFrameUrl({id,clip:'idle',frame:0,ft:0,hp:Number(m?.hp||1),maxHp:Number(m?.hp||1),dead:false})||''}catch(e){return''}
 }
 function a972MobDetailHtml(name){
-  const hit=a972MobByName(name);if(!hit)return'<div class="a972-empty">找不到怪物資料。</div>';const {id,m}=hit,img=a972MobImage(id,m),drops=DATA.dropsByMobName?.[m.n]||[];
+  const hit=a972MobByName(name);if(!hit)return'<div class="a972-empty">找不到怪物資料。</div>';const {id,m}=hit,img=a972MobImage(id,m),dropKey=(typeof a80DropKey==='function'?a80DropKey(m,state?.mapId):m.n),drops=DATA.dropsByMobName?.[dropKey]||[];
   const elem={fire:'火',water:'水',wind:'風',earth:'地',none:'無'}[m.e]||m.e||'無',size={S:'小型',M:'中型',L:'大型'}[m.s]||m.s||'-';
   return '<div class="a972-mob-hero">'+(img?'<img src="'+img+'" alt="">':'<div class="a972-mob-fallback">◆</div>')+'<h2>'+escapeHtml(m.n)+'</h2>'+
     '<p>等級 '+Number(m.lv||0)+'　HP '+fmt(Number(m.hp||0))+'　經驗 '+fmt(Number(m.exp||0))+'</p>'+
@@ -34924,100 +34924,90 @@ const A9945_BUILD='B1.0 Alpha99.45';
   if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);a9945ApplyVersion();return r}}
   if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);a9945ApplyVersion();return r}}
   if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);a9945ApplyVersion();return r}}
+
   window.__A9945_TEST__={build:A9945_BUILD,audit:a9945Audit,probe:a9945Probe};
   a9945ApplyVersion();
 })();
 
-
-
-})();
-
-
-// ===== Alpha99.46：夢幻之島怪物掉落表顯示與實際掉落來源一致 =====
-const A9946_BUILD='B1.0 Alpha99.46';
+// ===== Alpha99.47：夢幻之島怪物詳情掉落表與實際 rollDrop 同源 =====
+const A9947_BUILD='B1.0 Alpha99.47';
 (()=>{
   const DREAM='dream_island';
-  function a9946DropKey(m){
-    const name=String(m?.n||'');
-    if(String(state?.mapId||'')===DREAM&&typeof a80DropKey==='function')return String(a80DropKey(m,DREAM)||name);
-    return name;
-  }
-  function a9946Rows(m){
-    const key=a9946DropKey(m),rows=DATA.dropsByMobName?.[key];
+  function a9947ExpectedRows(m){
+    const key=(typeof a80DropKey==='function'?String(a80DropKey(m,DREAM)||m?.n||''):String(m?.n||''));
+    const rows=DATA.dropsByMobName?.[key];
     return{key,rows:Array.isArray(rows)?rows:[]};
   }
-
-  // Alpha97.2 的怪物詳情原本只用 m.n 查掉落表，會讓夢幻四精靈王顯示一般同名表。
-  // 只在夢幻之島、且實際掉落 key 與顯示名不同時，暫時映射成同一張表後再交回原 UI renderer。
-  const a9946MobDetailBase=a972MobDetailHtml;
-  a972MobDetailHtml=function(name){
-    const hit=a972MobByName(name);
-    if(!hit||String(state?.mapId||'')!==DREAM)return a9946MobDetailBase(name);
-    const mobName=String(hit.m?.n||name),info=a9946Rows(hit.m);
-    if(!info.key||info.key===mobName)return a9946MobDetailBase(name);
-    const had=Object.prototype.hasOwnProperty.call(DATA.dropsByMobName,mobName),old=DATA.dropsByMobName[mobName];
-    DATA.dropsByMobName[mobName]=info.rows;
-    try{return a9946MobDetailBase(name)}
-    finally{if(had)DATA.dropsByMobName[mobName]=old;else delete DATA.dropsByMobName[mobName]}
-  };
-
-  function a9946ApplyVersion(){
-    try{document.title=A41_BRAND+' · '+A9946_BUILD}catch(e){document.title='樓梯口天堂 · '+A9946_BUILD}
-    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9946_BUILD}catch(e){}
-    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.46｜夢幻之島17隻掉落表顯示校正｜PC＋手機'}catch(e){}
-    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9946_BUILD+' · 夢幻掉落表對表修正'}catch(e){}
-    try{window.__BUILD_VERSION__=A9946_BUILD;if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.dreamDropDisplayFix='alpha99.46'}}catch(e){}
+  function a9947ShownRows(m){
+    const snapMap=state?.mapId;
+    if(state)state.mapId=DREAM;
+    try{
+      const html=a972MobDetailHtml(m.n),box=document.createElement('div');box.innerHTML=html;
+      return Array.from(box.querySelectorAll('.a972-drop-row')).map(el=>{
+        const id=String(el.dataset.a972Item||'');
+        const pct=Number(String(el.querySelector('b')?.textContent||'').replace('%',''));
+        return[id,pct];
+      });
+    }finally{if(state)state.mapId=snapMap}
   }
-
-  function a9946Audit(){
-    const pool=Array.isArray(DATA.maps?.[DREAM])?DATA.maps[DREAM]:[],rows=[],issues=[];
-    const expect={'火精靈王':8,'水精靈王':8,'風精靈王':9,'地精靈王':8};
+  function a9947ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9947_BUILD}catch(e){document.title='樓梯口天堂 · '+A9947_BUILD}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9947_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.47｜夢幻之島掉落表顯示/實際同源校正｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9947_BUILD+' · 夢幻掉落同源校正'}catch(e){}
+    try{window.__BUILD_VERSION__=A9947_BUILD;if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.dreamDropUiSource='alpha99.47'}}catch(e){}
+  }
+  function a9947Audit(){
+    const pool=Array.isArray(DATA.maps?.[DREAM])?DATA.maps[DREAM]:[],issues=[],rows=[];
     for(const id of pool){
-      const m=DATA.mobs?.[id],info=a9946Rows(m),bad=info.rows.filter(r=>!DATA.items?.[r?.[0]]||!Number.isFinite(Number(r?.[1]))||Number(r?.[1])<0||Number(r?.[1])>100);
-      const rec={id,name:m?.n||id,key:info.key,count:info.rows.length,bad:bad.length};rows.push(rec);
-      if(!m)issues.push(id+' 怪物資料不存在');
-      if(!info.rows.length)issues.push((m?.n||id)+' 掉落表為空');
-      if(bad.length)issues.push((m?.n||id)+' 掉落表有無效列 '+bad.length);
-      if(expect[m?.n]!=null&&info.rows.length!==expect[m.n])issues.push(m.n+' 應顯示 '+expect[m.n]+' 項，實際 '+info.rows.length);
+      const m=DATA.mobs?.[id],x=a9947ExpectedRows(m);
+      const bad=x.rows.filter(r=>!DATA.items?.[r?.[0]]||!Number.isFinite(Number(r?.[1]))||Number(r?.[1])<0||Number(r?.[1])>100);
+      rows.push({id,name:m?.n||id,key:x.key,count:x.rows.length,bad:bad.length});
+      if(!m)issues.push(id+' 無怪物資料');
+      if(!x.rows.length)issues.push((m?.n||id)+' 無掉落表');
+      if(bad.length)issues.push((m?.n||id)+' 有 '+bad.length+' 筆無效掉落');
     }
-    return{ok:pool.length===17&&issues.length===0,build:A9946_BUILD,poolCount:pool.length,issues,rows};
+    const four={};
+    for(const id of ['nm_028','nm_029','nm_030','nm_031']){const m=DATA.mobs?.[id],x=a9947ExpectedRows(m);four[m?.n||id]={key:x.key,count:x.rows.length}}
+    const fourOk=four['火精靈王']?.key==='夢幻之島火精靈王'&&four['火精靈王']?.count===8&&four['水精靈王']?.key==='夢幻之島水精靈王'&&four['水精靈王']?.count===8&&four['風精靈王']?.key==='夢幻之島風精靈王'&&four['風精靈王']?.count===9&&four['地精靈王']?.key==='夢幻之島地精靈王'&&four['地精靈王']?.count===8;
+    if(!fourOk)issues.push('四大精靈王夢幻專屬掉落 key/列數異常');
+    return{ok:pool.length===17&&issues.length===0,build:A9947_BUILD,poolCount:pool.length,issues,rows,four};
   }
-
-  function a9946Probe(){
+  function a9947Probe(){
     const snap=state?JSON.parse(JSON.stringify(state)):null,oldRand=Math.random,rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
     try{
       a76TestReset('knight',80);state.inVillage=false;state.mapId=DREAM;state.running=false;state.inventory={};state.session={start:Date.now(),kills:0,exp:0,gold:0,items:0};derive();
       const pool=DATA.maps[DREAM]||[];
       for(const id of pool){
-        const m=DATA.mobs[id],hp=Math.max(1,Number(m?.hp||1));
-        state.mobs=[{id,hp,maxHp:hp,clip:'idle',frame:0,ft:0,dead:false,respawnAt:0,hitFlash:0,nextAtk:Number.MAX_SAFE_INTEGER}];
-        const info=a9946Rows(m),html=a972MobDetailHtml(m.n),shown=(html.match(/data-a972-item=/g)||[]).length;
-        add(m.n+' 詳情表與實際表列數一致',shown===info.rows.length,{id,key:info.key,expected:info.rows.length,shown});
+        const m=DATA.mobs[id],exp=a9947ExpectedRows(m),shown=a9947ShownRows(m);
+        const exact=shown.length===exp.rows.length&&shown.every((r,i)=>r[0]===String(exp.rows[i]?.[0]||'')&&Number(r[1])===Number(exp.rows[i]?.[1]||0));
+        add(m.n+' UI掉落表逐項等於實際來源表',exact,{id,key:exp.key,expected:exp.rows,shown});
       }
       Math.random=()=>0;
       for(const id of pool){
-        const m=DATA.mobs[id],info=a9946Rows(m),expected=info.rows?.[0]?.[0]||null;
+        const m=DATA.mobs[id],exp=a9947ExpectedRows(m),first=exp.rows?.[0]?.[0]||null;
         state.inventory={};state.session.items=0;
         const got=rollDrop(m);
-        add(m.n+' 正式掉落鏈使用正確首列',!!expected&&got===expected,{id,key:info.key,expected,got});
+        add(m.n+' rollDrop首列使用同一來源',!!first&&got===first,{id,key:exp.key,first,got});
       }
-      const four=['nm_028','nm_029','nm_030','nm_031'].map(id=>{const m=DATA.mobs[id],x=a9946Rows(m);return{name:m.n,key:x.key,count:x.rows.length}});
-      add('四精靈王使用夢幻專屬表',four.every(x=>x.key.startsWith('夢幻之島')&&x.count>0),{four});
-    }catch(e){add('Alpha99.46 probe',false,{error:String(e?.stack||e)})}
-    finally{Math.random=oldRand;try{if(snap){state=snap;derive();render()}else state=null}catch(e){}}
-    return{ok:rows.every(x=>x.ok),build:A9946_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,failed:rows.filter(x=>!x.ok).length,rows};
+      const aud=a9947Audit();add('Alpha99.47靜態稽核',aud.ok,aud);
+      add('Alpha99.45純物理規則保留',window.__A9945_TEST__?.audit?.().ok===true,window.__A9945_TEST__?.audit?.());
+      add('Alpha99.44十七隻一般化保留',window.__A9944_TEST__?.audit?.().ok===true,window.__A9944_TEST__?.audit?.());
+    }catch(e){add('Alpha99.47 probe',false,{error:String(e?.stack||e)})}
+    finally{Math.random=oldRand;try{if(snap){state=snap;derive();render()}else state=null}catch(e){}a9947ApplyVersion()}
+    return{ok:rows.every(x=>x.ok),build:A9947_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,failed:rows.filter(x=>!x.ok).length,rows};
   }
+  const rb=render;render=function(){const r=rb.apply(this,arguments);a9947ApplyVersion();return r};
+  const ib=init;init=function(){const r=ib.apply(this,arguments);a9947ApplyVersion();return r};
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);a9947ApplyVersion();return r}};
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);a9947ApplyVersion();return r}};
+  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);a9947ApplyVersion();return r}};
+  window.__A9947_TEST__={build:A9947_BUILD,audit:a9947Audit,probe:a9947Probe,shown:(id)=>a9947ShownRows(DATA.mobs?.[id]),expected:(id)=>a9947ExpectedRows(DATA.mobs?.[id])};
+  a9947ApplyVersion();
+})();
 
-  const a9946RenderBase=render;
-  render=function(){const r=a9946RenderBase.apply(this,arguments);a9946ApplyVersion();return r};
-  const a9946InitBase=init;
-  init=function(){const r=a9946InitBase.apply(this,arguments);a9946ApplyVersion();return r};
-  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);a9946ApplyVersion();return r}};
-  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);a9946ApplyVersion();return r}};
-  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);a9946ApplyVersion();return r}};
 
-  window.__A9946_TEST__={build:A9946_BUILD,audit:a9946Audit,probe:a9946Probe,rows:(id)=>a9946Rows(DATA.mobs?.[id])};
-  a9946ApplyVersion();
+
 })();
 </script>
 
