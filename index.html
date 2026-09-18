@@ -35429,6 +35429,8 @@ const A9949_BUILD='B1.0 Alpha99.49';
     }
   }
 
+
+
   applyVersion();
   if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);applyVersion();return r}}
   if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);applyVersion();return r}}
@@ -36017,6 +36019,366 @@ const A9952_BUILD='B1.0 Alpha99.52';
 })();
 
 
+// ===== Alpha99.53：自動指定變身 + 取消變形控制戒指門檻 =====
+// 使用者自訂規則：不再需要「變形控制戒指」才能指定變身。
+// 保留：當下等級可用名單、變形卷軸消耗、30分鐘持續、能力加成與動畫。
+// 自動設定：可直接指定目前等級的型態；空白仍代表隨機。
+// 手動使用變形卷軸：一律開啟型態選擇，不再因沒有控制戒指而強制隨機。
+const A9953_BUILD='B1.0 Alpha99.53';
+(()=>{
+  const REAL_RING_CHECK=a14HasPolyRing;
+  const BASE_POLY_OPEN=a14OpenPoly;
+  const BASE_POLY_OPTIONS=a97PolyOptions;
+  const BASE_AUTO_PANEL=a97AutoPanelHtml;
+  const BASE_BIND=bindDrawer;
+
+  function a9953ActualHasRing(){
+    try{return !!REAL_RING_CHECK()}catch(e){return false}
+  }
+
+  // 核心規則覆寫：指定變身不再需要控制戒指。
+  a14HasPolyRing=function(){return true};
+
+  // 手動卷軸仍沿用原 Alpha14 的安全流程，只改標題，不碰套用/扣卷軸邏輯。
+  a14OpenPoly=function(){
+    const r=BASE_POLY_OPEN.apply(this,arguments);
+    try{
+      const h=document.querySelector('#a14-poly-modal .a14-poly-head b');
+      if(h)h.textContent='選擇變身型態（不需變形控制戒指）';
+    }catch(e){}
+    return r;
+  };
+
+  // 下拉選單直接顯示目前等級可用型態 + 實際能力。
+  a97PolyOptions=function(){
+    a97EnsureState();
+    const a=state.autoCombat,tier=a14PolyTier(state.player.lv),forms=Array.isArray(tier?.forms)?tier.forms:[];
+    const valid=forms.some(f=>f.n===a.polyFormName);
+    if(a.polyFormName&&!valid)a.polyFormName='';
+    return '<option value="" '+(!a.polyFormName?'selected':'')+'>隨機使用目前等級變身</option>'+
+      forms.map(f=>{
+        const text=f.n+'｜'+a14PolyDesc(f);
+        return '<option value="'+escapeHtml(f.n)+'" '+(a.polyFormName===f.n?'selected':'')+'>'+escapeHtml(text)+'</option>';
+      }).join('');
+  };
+
+  // 在自動設定裡明確標示新規則，避免玩家誤以為仍需戒指。
+  a97AutoPanelHtml=function(){
+    let h=BASE_AUTO_PANEL.apply(this,arguments);
+    try{
+      h=h.replace(
+        /(<label class="a11-field a97-wide"><span>自動變身<\/span><select data-a97-string="polyFormName">[\s\S]*?<\/select><\/label>)/,
+        '$1<div class="a9953-poly-note"><b>指定變身：</b>不需要變形控制戒指；選單只顯示目前等級可用型態，括號內容就是實際能力加成。變身結束後會依此設定再次使用變形卷軸。</div>'
+      );
+    }catch(e){}
+    return h;
+  };
+
+  // 改變自動變身開關/指定型態時，Alpha99.52 的離線穩態快取必須失效，
+  // 避免用舊變身攻速/傷害模型結算新設定。
+  bindDrawer=function(root){
+    const r=BASE_BIND.apply(this,arguments);
+    try{
+      const sel=root?.querySelector?.('[data-a97-string="polyFormName"]');
+      if(sel){
+        const old=sel.onchange;
+        sel.onchange=function(ev){
+          const ret=old?old.call(this,ev):undefined;
+          try{if(state){delete state.a9952OfflineCache;state.saveMeta=state.saveMeta||{};state.saveMeta.polyChoiceChangedAt=Date.now();save()}}catch(e){}
+          return ret;
+        };
+      }
+      const chk=root?.querySelector?.('[data-a11-auto="poly"]');
+      if(chk){
+        const old=chk.onchange;
+        chk.onchange=function(ev){
+          const ret=old?old.call(this,ev):undefined;
+          try{if(state){delete state.a9952OfflineCache;state.saveMeta=state.saveMeta||{};state.saveMeta.polyChoiceChangedAt=Date.now();save()}}catch(e){}
+          return ret;
+        };
+      }
+    }catch(e){}
+    return r;
+  };
+
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9953_BUILD}catch(e){document.title='樓梯口天堂 · '+A9953_BUILD}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9953_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.53｜自動指定變身＋免控制戒指｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9953_BUILD+' · 自動指定變身'}catch(e){}
+    try{
+      window.__BUILD_VERSION__=A9953_BUILD;
+      if(state){
+        state.saveMeta=state.saveMeta||{};
+        state.saveMeta.polySelectPolicy='alpha99.53-no-control-ring-required';
+      }
+    }catch(e){}
+  }
+
+  async function probe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null;
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      // 1) Lv52 無控制戒指，自動指定死亡騎士。
+      a76TestReset('knight',52);
+      state.inventory={scroll_poly:2};
+      state.equipment=state.equipment||{};
+      for(const k of Object.keys(state.equipment))if(state.equipment[k]==='acc_117')delete state.equipment[k];
+      delete state.inventory.acc_117;
+      state.buffs={};state.itemBuffs={};state.skillBuffs={};state.polyForm=null;state.polyUntil=0;
+      a97EnsureState();
+      state.autoCombat.poly=true;
+      state.autoCombat.polyFormName='死亡騎士';
+      state.running=true;
+      derive();
+      const atk0=Number(state.player.atk||0),interval0=Number(a8AttackInterval()||0),ring0=a9953ActualHasRing(),scroll0=a8Count('scroll_poly');
+      a11AutoAt=0;a11Auto(4000);
+      const f=a14PolyActive(),interval1=Number(a8AttackInterval()||0);
+      add('無控制戒指可自動指定死亡騎士',
+        !ring0&&f?.n==='死亡騎士'&&a8Count('scroll_poly')===scroll0-1,
+        {actualRing:ring0,form:f?.n,scrollBefore:scroll0,scrollAfter:a8Count('scroll_poly')});
+      add('死亡騎士能力加成實際生效',
+        Number(state.player.atk||0)>=atk0+3&&Number(state.player.polyHit||0)>=3&&interval1<interval0,
+        {atkBefore:atk0,atkAfter:state.player.atk,polyHit:state.player.polyHit,intervalBefore:interval0,intervalAfter:interval1,desc:a14PolyDesc(f)});
+
+      // 2) UI 只列目前等級名單，且顯示能力文字。
+      state.player.lv=51;state.autoCombat.polyFormName='';const o51=a97PolyOptions();
+      state.player.lv=52;const o52=a97PolyOptions();
+      add('變身選單遵守等級名單',
+        !o51.includes('死亡騎士')&&o51.includes('克特')&&o52.includes('死亡騎士')&&!o52.includes('克特'),
+        {lv51HasDK:o51.includes('死亡騎士'),lv52HasDK:o52.includes('死亡騎士')});
+      add('自動變身選單顯示能力加成',
+        o52.includes('死亡騎士｜近傷+3')&&o52.includes('攻速+20%'),
+        {sample:o52.match(/死亡騎士[^<]*/)?.[0]||''});
+
+      // 3) 手動使用卷軸，沒有戒指也必須開指定視窗，不先扣卷軸。
+      a76TestReset('knight',52);state.inventory={scroll_poly:1};state.polyForm=null;state.polyUntil=0;
+      try{a14ClosePoly()}catch(e){}
+      const actualRing=a9953ActualHasRing(),before=a8Count('scroll_poly');
+      const used=a8UseItem('scroll_poly'),modal=document.getElementById('a14-poly-modal');
+      const opened=!!modal?.classList.contains('open'),afterOpen=a8Count('scroll_poly');
+      let dkBtn=[...(modal?.querySelectorAll?.('[data-a14-poly]')||[])].find(b=>b.textContent.includes('死亡騎士'));
+      if(dkBtn)dkBtn.click();
+      add('手動變形卷軸免戒指也能指定',
+        !actualRing&&used===true&&opened&&afterOpen===before&&a14PolyActive()?.n==='死亡騎士'&&a8Count('scroll_poly')===0,
+        {actualRing,opened,before,afterOpen,afterSelect:a8Count('scroll_poly'),form:a14PolyActive()?.n});
+
+      // 4) 改變指定變身時，舊離線穩態快取必須立即失效。
+      state.a9952OfflineCache={v:52,sig:'a9953-test-old-poly-cache',sample:{rateDone:90000}};
+      const host=document.createElement('div');
+      host.innerHTML=a97AutoPanelHtml();
+      bindDrawer(host);
+      const sel=host.querySelector('[data-a97-string="polyFormName"]');
+      if(sel){
+        sel.value='死亡騎士';
+        sel.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+      add('改變指定變身會清除舊離線快取',
+        !state.a9952OfflineCache,
+        {selectFound:!!sel,cacheExists:!!state.a9952OfflineCache,selected:state.autoCombat?.polyFormName});
+
+      // 5) 舊核心回歸。
+      const p52=window.__A9952_TEST__?.audit?.();
+      add('Alpha99.52 四角色離線核心維持正常',p52?.ok===true,p52||{});
+    }catch(e){
+      add('Alpha99.53 probe exception',false,{error:String(e?.stack||e)});
+    }finally{
+      try{a14ClosePoly()}catch(e){}
+      try{if(snap){state=snap;derive();render()}}catch(e){}
+      applyVersion();
+    }
+    return{ok:rows.every(x=>x.ok),build:A9953_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+
+  function audit(){
+    const issues=[];
+    try{if(a14HasPolyRing()!==true)issues.push('免控制戒指政策未生效')}catch(e){issues.push('變身政策 API 異常')}
+    try{
+      if(state){
+        a97EnsureState();
+        const opts=a97PolyOptions();
+        if(!opts.includes('｜'))issues.push('變身選單未顯示能力');
+      }
+    }catch(e){}
+    const p52=window.__A9952_TEST__?.audit?.();
+    if(p52?.ok!==true)issues.push('Alpha99.52 回歸');
+    return{ok:issues.length===0,build:A9953_BUILD,issues,controlRingRequired:false,previous:p52};
+  }
+
+  applyVersion();
+  window.__A9953_TEST__={
+    build:A9953_BUILD,audit,probe,
+    actualHasControlRing:a9953ActualHasRing,
+    previous:window.__A9952_TEST__
+  };
+})();
+
+
+// ===== Alpha99.54：把指定變身真正接入目前共同版「設定 → 自動設定 → 輔助道具」 =====
+// Alpha99.53 底層規則有效，但選單誤接在舊 a97 面板；99.54 只修正目前 a9868 可見設定 UI 與事件綁定。
+const A9954_BUILD='B1.0 Alpha99.54';
+(()=>{
+  const BASE_DRAWER=drawerHtml;
+  const BASE_BIND=bindDrawer;
+
+  function invalidatePolyOfflineCache(reason='poly-setting-change'){
+    if(!state)return;
+    try{delete state.a9952OfflineCache}catch(e){}
+    state.saveMeta=state.saveMeta||{};
+    state.saveMeta.polyChoiceChangedAt=Date.now();
+    state.saveMeta.polyChoiceChangedReason=reason;
+  }
+
+  function selectedPolyDesc(){
+    try{
+      a97EnsureState();
+      const name=String(state.autoCombat?.polyFormName||'');
+      if(!name)return '隨機使用目前等級可用變身；不需要變形控制戒指。';
+      const tier=a14PolyTier(state.player.lv),f=(tier?.forms||[]).find(x=>x.n===name);
+      return f?name+'：'+a14PolyDesc(f):'目前等級無法使用此變身，已自動回到隨機。';
+    }catch(e){return '不需要變形控制戒指。'}
+  }
+
+  function visiblePolyRow(){
+    a97EnsureState();
+    return '<div class="a9954-poly-row">'+
+      '<div class="a9954-poly-title"><b>指定變身</b><small>免變形控制戒指</small></div>'+
+      '<select data-a9954-poly-select>'+a97PolyOptions()+'</select>'+
+      '<small class="a9954-poly-desc">'+escapeHtml(selectedPolyDesc())+'</small>'+
+    '</div>';
+  }
+
+  drawerHtml=function(which){
+    const h=BASE_DRAWER.apply(this,arguments);
+    if(which!=='settings'||!state||typeof h!=='string')return h;
+    if(h.includes('data-a9954-poly-select'))return h;
+    // 只插在「目前真正使用的」a9868 輔助道具區之變形卷軸列後方。
+    const re=/(<div class="a9868-item-row"><label><input type="checkbox" data-a9868-flag="poly"[\s\S]*?<\/div>)/;
+    if(!re.test(h))return h;
+    return h.replace(re,'$1'+visiblePolyRow());
+  };
+
+  bindDrawer=function(root){
+    const r=BASE_BIND.apply(this,arguments);
+    try{
+      const sel=root?.querySelector?.('[data-a9954-poly-select]');
+      if(sel)sel.onchange=()=>{
+        a97EnsureState();
+        state.autoCombat.polyFormName=String(sel.value||'');
+        invalidatePolyOfflineCache('poly-form-name');
+        save();
+        try{renderDrawers()}catch(e){}
+      };
+
+      // 99.53 綁的是舊 data-a11-auto="poly"；目前可見介面實際是 data-a9868-flag="poly"。
+      const chk=root?.querySelector?.('[data-a9868-flag="poly"]');
+      if(chk){
+        const old=chk.onchange;
+        chk.onchange=function(ev){
+          const ret=old?old.call(this,ev):undefined;
+          invalidatePolyOfflineCache('poly-auto-toggle');
+          try{save()}catch(e){}
+          return ret;
+        };
+      }
+    }catch(e){try{console.error('Alpha99.54 bind poly UI',e)}catch(_e){}}
+    return r;
+  };
+
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9954_BUILD}catch(e){document.title='樓梯口天堂 · '+A9954_BUILD}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9954_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.54｜自動設定變身選單真正接入｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9954_BUILD+' · 變身選單 UI 修正'}catch(e){}
+    try{window.__BUILD_VERSION__=A9954_BUILD;if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.polyUiRevision='alpha99.54-a9868-visible-ui'}}catch(e){}
+  }
+
+  function audit(){
+    const issues=[];
+    try{
+      if(a14HasPolyRing()!==true)issues.push('免控制戒指規則回歸');
+      if(state){
+        const oldDrawer=typeof drawer==='undefined'?'':drawer;
+        const h=drawerHtml('settings');
+        // 若目前分頁不是「自動設定」，settings HTML 可暫時沒有該欄；實際 UI probe 會切回自動設定驗證。
+        if(h.includes('data-a9868-flag="poly"')&&!h.includes('data-a9954-poly-select'))issues.push('目前自動設定有變形卷軸但沒有指定變身選單');
+      }
+    }catch(e){issues.push('變身選單 audit 例外：'+String(e?.message||e))}
+    const p53=window.__A9953_TEST__?.audit?.();if(p53?.ok!==true)issues.push('Alpha99.53 變身核心回歸');
+    const p52=window.__A9952_TEST__?.audit?.();if(p52?.ok!==true)issues.push('Alpha99.52 離線核心回歸');
+    return{ok:issues.length===0,build:A9954_BUILD,issues,previous53:p53,previous52:p52};
+  }
+
+  async function probe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null,drawer0=typeof drawer==='undefined'?'':drawer;
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      a76TestReset('knight',52);a97EnsureState();state.inventory={...(state.inventory||{}),scroll_poly:10};derive();
+      // 直接取得目前共同版設定 HTML；預設自動分頁應能看到變形卷軸與指定選單。
+      let h=drawerHtml('settings');
+      add('目前共同版自動設定顯示指定變身選單',h.includes('data-a9868-flag="poly"')&&h.includes('data-a9954-poly-select'),{hasPolyFlag:h.includes('data-a9868-flag="poly"'),hasSelect:h.includes('data-a9954-poly-select')});
+      add('可見選單顯示死亡騎士能力',h.includes('死亡騎士｜近傷+3')&&h.includes('攻速+20%'),{});
+      add('可見介面標示免控制戒指',h.includes('免變形控制戒指')||h.includes('不需要變形控制戒指'),{});
+
+      const host=document.createElement('div');host.innerHTML=h;bindDrawer(host);
+      state.a9952OfflineCache={v:52,sig:'old-visible-poly-cache',sample:{rateDone:90000}};
+      const sel=host.querySelector('[data-a9954-poly-select]');
+      if(sel){sel.value='死亡騎士';sel.dispatchEvent(new Event('change',{bubbles:true}))}
+      add('可見選單能寫入死亡騎士並清除離線快取',state.autoCombat?.polyFormName==='死亡騎士'&&!state.a9952OfflineCache,{selected:state.autoCombat?.polyFormName,cache:!!state.a9952OfflineCache});
+
+      // 重新建立面板測可見的自動變身開關。
+      h=drawerHtml('settings');const host2=document.createElement('div');host2.innerHTML=h;bindDrawer(host2);
+      state.a9952OfflineCache={v:52,sig:'old-visible-toggle-cache',sample:{rateDone:90000}};
+      const chk=host2.querySelector('[data-a9868-flag="poly"]');
+      if(chk){chk.checked=!chk.checked;chk.dispatchEvent(new Event('change',{bubbles:true}))}
+      add('可見自動變身開關也會清除離線快取',!!chk&&!state.a9952OfflineCache,{checkboxFound:!!chk,poly:state.autoCombat?.poly,cache:!!state.a9952OfflineCache});
+
+      const p53=await window.__A9953_TEST__?.probe?.();
+      add('Alpha99.53 免戒指變身核心回歸',p53?.ok===true,{passed:p53?.passed,total:p53?.total});
+      const p52=window.__A9952_TEST__?.audit?.();
+      add('Alpha99.52 四角色離線核心回歸',p52?.ok===true,p52||{});
+    }catch(e){add('Alpha99.54 probe exception',false,{error:String(e?.stack||e)})}
+    finally{
+      try{if(snap){state=snap;derive();if(typeof drawer!=='undefined')drawer=drawer0;render()}}catch(e){}
+      applyVersion();
+    }
+    return{ok:rows.every(x=>x.ok),build:A9954_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+
+  async function uiProbe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null,drawer0=drawer;
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      a76TestReset('knight',52);a97EnsureState();state.inventory={...(state.inventory||{}),scroll_poly:10};derive();
+      drawer='settings';renderDrawers();
+      const roots=[document.querySelector('#drawer'),document.querySelector('#mobile-drawer-body')].filter(Boolean);
+      for(const [i,root] of roots.entries()){
+        const sel=root.querySelector('[data-a9954-poly-select]'),chk=root.querySelector('[data-a9868-flag="poly"]'),row=root.querySelector('.a9954-poly-row');
+        add((i===0?'桌機':'手機')+'實際設定 DOM 有指定變身選單',!!sel&&!!chk&&!!row&&getComputedStyle(row).display!=='none',{select:!!sel,checkbox:!!chk,row:!!row,display:row?getComputedStyle(row).display:'missing',options:sel?.options?.length||0});
+        add((i===0?'桌機':'手機')+'實際選單包含死亡騎士能力',!!sel&&[...sel.options].some(o=>o.textContent.includes('死亡騎士')&&o.textContent.includes('近傷+3')&&o.textContent.includes('攻速+20%')),{sample:sel?[...sel.options].find(o=>o.textContent.includes('死亡騎士'))?.textContent||'':''});
+      }
+      const root=document.querySelector('#drawer'),sel=root?.querySelector('[data-a9954-poly-select]');
+      state.a9952OfflineCache={v:52,sig:'a9954-ui-old',sample:{rateDone:90000}};
+      if(sel){sel.value='死亡騎士';sel.dispatchEvent(new Event('change',{bubbles:true}))}
+      add('實際 DOM 選擇死亡騎士可寫入並清快取',!!sel&&state.autoCombat?.polyFormName==='死亡騎士'&&!state.a9952OfflineCache,{selected:state.autoCombat?.polyFormName,cache:!!state.a9952OfflineCache});
+      drawer='settings';renderDrawers();
+      const chk=document.querySelector('#drawer [data-a9868-flag="poly"]');state.a9952OfflineCache={v:52,sig:'a9954-ui-toggle-old',sample:{rateDone:90000}};
+      if(chk){chk.checked=!chk.checked;chk.dispatchEvent(new Event('change',{bubbles:true}))}
+      add('實際 DOM 自動變身開關可清快取',!!chk&&!state.a9952OfflineCache,{found:!!chk,poly:state.autoCombat?.poly,cache:!!state.a9952OfflineCache});
+    }catch(e){add('Alpha99.54 uiProbe exception',false,{error:String(e?.stack||e)})}
+    finally{try{if(snap){state=snap;derive();drawer=drawer0;render()}else state=null}catch(e){}applyVersion()}
+    return{ok:rows.every(x=>x.ok),build:A9954_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+  applyVersion();
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  const rb=render;render=function(){const r=rb.apply(this,arguments);applyVersion();return r};
+
+  window.__A9954_TEST__={build:A9954_BUILD,audit,probe,uiProbe,applyVersion,previous:window.__A9953_TEST__};
+})();
+
+
 
 })();
 </script>
@@ -36229,4 +36591,49 @@ const A9952_BUILD='B1.0 Alpha99.52';
   window.addEventListener('pageshow',apply,{passive:true});
 })();
 </script>
+
+<style id="a9953-poly-style">
+.a9953-poly-note{
+  grid-column:1/-1;
+  margin:-2px 0 4px;
+  padding:7px 9px;
+  border:1px solid #5a4827;
+  border-radius:6px;
+  background:#171108;
+  color:#bfae88;
+  font-size:10px;
+  line-height:1.5;
+}
+.a9953-poly-note b{color:#f0d47d}
+@media(max-width:600px){
+  .a9953-poly-note{font-size:9px;padding:6px 7px}
+}
+</style>
+<script id="a9953-final-version">
+(()=>{
+  const B='B1.0 Alpha99.53';
+  function apply(){
+    window.__BUILD_VERSION__=B;
+    try{document.title='樓梯口天堂 · '+B}catch(e){}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.53｜自動指定變身＋免控制戒指｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 自動指定變身'}catch(e){}
+  }
+  apply();setTimeout(apply,0);
+  window.addEventListener('pageshow',apply,{passive:true});
+})();
+</script>
+
+
+<style id="a9954-poly-ui-style">
+.a9954-poly-row{display:grid;grid-template-columns:minmax(110px,.75fr) minmax(0,1.55fr);gap:7px 10px;align-items:center;padding:9px 0 7px;border-top:1px solid rgba(94,67,31,.45)}
+.a9954-poly-title{display:flex;flex-direction:column;gap:2px;color:#e5cf9d;font-size:12px}.a9954-poly-title b{color:#f0d47d}.a9954-poly-title small{color:#9d8d6d;font-size:10px}
+.a9954-poly-row select{height:36px;min-width:0;width:100%;border:1px solid #624a21;border-radius:6px;background:#100b07;color:#eee0bd;padding:0 8px;font-size:12px}
+.a9954-poly-desc{grid-column:1/-1;color:#a99877;font-size:10px;line-height:1.5;padding-left:2px}
+@media(max-width:900px){.a9954-poly-row{grid-template-columns:1fr}.a9954-poly-row select,.a9954-poly-desc{grid-column:1}.a9954-poly-title{font-size:11px}}
+</style>
+<script id="a9954-final-version">
+(()=>{const B='B1.0 Alpha99.54';function a(){window.__BUILD_VERSION__=B;try{document.title='樓梯口天堂 · '+B}catch(e){}try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.54｜自動設定變身選單真正接入｜PC＋手機'}catch(e){}try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 變身選單 UI 修正'}catch(e){}}a();setTimeout(a,0);window.addEventListener('pageshow',a,{passive:true})})();
+</script>
+
 </body></html>
