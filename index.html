@@ -35463,6 +35463,31 @@ const A9950_BUILD='B1.0 Alpha99.50';
   const wait0=()=>new Promise(r=>setTimeout(r,0));
   const stochastic=(v)=>{v=Math.max(0,Number(v)||0);const f=Math.floor(v),q=v-f;return f+(Math.random()<q?1:0)};
 
+  function a9950StableObject(x){
+    if(!x||typeof x!=='object'||Array.isArray(x))return x;const o={};for(const k of Object.keys(x).sort())o[k]=x[k];return o;
+  }
+  function a9950SampleSignature(){
+    if(!state?.player)return '';
+    const a=state.autoCombat||{},p=state.player;
+    const auto={heal:!!a.heal,healPotion:String(a.healPotion||''),healPct:Number(a.healPct||0),healSkill:!!a.healSkill,healSkillId:String(a.healSkillId||''),healSkillPct:Number(a.healSkillPct||0),attackSkill:String(a.attackSkill||''),openSkill:String(a.openSkill||''),convertSkill:String(a.convertSkill||''),haste:!!a.haste,blue:!!a.blue,autoBuffSkills:a9950StableObject(a.autoBuffSkills||{}),autoRestock:a9950StableObject(a.autoRestock||{})};
+    const buffs=Object.entries(state.skillBuffs||{}).filter(([,at])=>Number(at||0)>Date.now()).map(([id])=>id).sort();
+    const itemBuffs=Object.entries(state.itemBuffs||state.buffs||{}).filter(([,at])=>typeof at!=='number'||Number(at||0)>Date.now()).map(([id])=>id).sort();
+    return JSON.stringify({map:String(state.mapId||''),cls:String(p.cls||''),lv:Number(p.lv||0),atk:Number(p.atk||0),ac:Number(p.ac||0),mr:Number(p.mr||0),maxHp:Number(p.maxHp||0),maxMp:Number(p.maxMp||0),stats:p.stats||{},equip:a9950StableObject(state.equipment||{}),learned:[...(state.learnedSkills||[])].sort(),element:String(state.element||''),auto,buffs,itemBuffs,sherine:!!state.sherineWorld});
+  }
+  function a9950CacheGet(){
+    const c=state?.a9952OfflineCache;if(!c||c.v!==52||!c.sample)return null;
+    const sig=a9950SampleSignature();if(!sig||sig!==String(c.sig||''))return null;
+    const hpMax=Math.max(1,Number(state.player?.maxHp||1)),mpMax=Math.max(1,Number(state.player?.maxMp||1));
+    if(Number(state.player?.hp||0)<hpMax*.55)return null;
+    if(state?.autoCombat?.healSkill&&Number(state.player?.mp||0)<mpMax*.15)return null;
+    return JSON.parse(JSON.stringify(c.sample));
+  }
+  function a9950CachePut(sample){
+    if(!sample||sample.stopped||Number(sample.rateDone||0)<60000||Number(sample.lv0||0)!==Number(sample.lv1||0)||!a9950SampleReusable(sample))return false;
+    const sig=a9950SampleSignature();if(!sig)return false;
+    state.a9952OfflineCache={v:52,sig,at:Date.now(),sample:JSON.parse(JSON.stringify(sample))};return true;
+  }
+
   async function replayResponsive(ms,stat){
     let rem=roundMs(ms),done=0;
     while(rem>=TICK&&!state?.dead){
@@ -35581,7 +35606,7 @@ const A9950_BUILD='B1.0 Alpha99.50';
           }
         });
         state.running=false;stat.killChunks++;
-        if(k<kills&&!state.dead&&performance.now()-w0>14){stat.yields++;await wait0()}
+        if(k<kills&&!state.dead&&(k%900===0||performance.now()-w0>14)){stat.yields++;await wait0()}
       }
     }finally{
       if(oldShow)a67ShowDrop=oldShow;
@@ -35613,7 +35638,7 @@ const A9950_BUILD='B1.0 Alpha99.50';
     state.a9881=(state.a9881&&typeof state.a9881==='object')?state.a9881:{};
     const stat={
       build:A9950_BUILD,engine:'mobile-low-compute-hybrid',startedWall:performance.now(),
-      totalMs:Number(job.totalElapsed||0),exactMs:0,fastMs:0,directKills:0,calibrations:0,
+      totalMs:Number(job.totalElapsed||0),exactMs:0,fastMs:0,directKills:0,calibrations:0,cacheHits:0,cacheMisses:0,cacheWarmupMs:0,
       exactChunks:0,killChunks:0,yields:0,segments:0,mapId:String(state.mapId||'')
     };
     state.a9881.active=true;state.a9881.current=stat;
@@ -35623,10 +35648,18 @@ const A9950_BUILD='B1.0 Alpha99.50';
         await wait0();
         while(state&&token===P.token&&state.a45?.offlineSettling&&!state.dead&&Number(job.remaining||0)>=TICK){
           const before=a45OfflineSummaryBefore(),remaining0=Number(job.remaining||0),wall0=performance.now();
-          // 99.50：一次校準後，只要生命/魔力/補給仍屬穩態，就連續吃完多個 6000-kill 高速批次，不再每批重做 30s+90/180s 校準。
-          const sample=await calibrate(remaining0,stat);stat.calibrations++;stat.exactMs+=Number(sample.done||0);
-          let processed=Number(sample.done||0),fastTotal=0,killsTotal=0,batches=0,resourceShort=false;
-          if(!(sample.done>0))break;
+          // 99.52：若同角色/同地圖/同裝備/同自動設定已有已驗證穩態樣本，
+          // 本次只重跑 30 秒暖機確認起始 HP/MP 與一次性消耗，再直接沿用上次 90/180 秒穩態資料。
+          // 任一簽章條件改變、暖機後狀態改變或生命不安全，立即回退完整校準。
+          let sample=null,exactProcessed=0,cachedSig='';const cached=a9950CacheGet();
+          if(cached){
+            stat.cacheHits++;cachedSig=String(state?.a9952OfflineCache?.sig||'');const warm=Math.min(30000,remaining0),d=await replayResponsive(warm,stat);exactProcessed=d;stat.exactMs+=d;stat.cacheWarmupMs+=d;
+            if(d+1>=warm&&!state.dead&&a9950SampleSignature()===cachedSig){sample=cached}else{sample={...cached,stopped:true};}
+          }else{
+            stat.cacheMisses++;sample=await calibrate(remaining0,stat);stat.calibrations++;exactProcessed=Number(sample.done||0);stat.exactMs+=exactProcessed;try{a9950CachePut(sample)}catch(e){}
+          }
+          let processed=exactProcessed,fastTotal=0,killsTotal=0,batches=0,resourceShort=false;
+          if(!(exactProcessed>0)||!sample)break;
           const reusable=a9950SampleReusable(sample);
           while(!sample.stopped&&!state.dead&&Number(sample.rateKills??sample.kills)>0&&processed<remaining0){
             let fastMs=Number(window.__A9881_TEST__?.limit?.(sample,remaining0-processed)||0);if(!(fastMs>0))break;
@@ -35645,7 +35678,7 @@ const A9950_BUILD='B1.0 Alpha99.50';
           job.remaining=Math.max(0,remaining0-processed);job.processed=Number(job.processed||0)+processed;stat.segments++;
           if(processed>0&&state.a36?.background)state.a36.background.hiddenAt=Number(state.a36.background.hiddenAt||Date.now())+processed;
           state.running=false;state.a45.offlineJob=job;
-          state.a9881.current={...stat,lastSample:{ms:sample.done,rateMs:sample.rateDone,kills:sample.kills,rateKills:sample.rateKills,warmupMs:sample.warmupMs,hp0:sample.hp0,hp1:sample.hp1,minHp:sample.minHp,potionHeals:sample.potionHeals,healSkillCasts:sample.healSkillCasts,reusable},lastBatch:{ms:fastTotal,kills:killsTotal,batches,resourceShort},wallStepMs:performance.now()-wall0};
+          state.a9881.current={...stat,lastSample:{ms:sample.done,rateMs:sample.rateDone,kills:sample.kills,rateKills:sample.rateKills,warmupMs:sample.warmupMs,hp0:sample.hp0,hp1:sample.hp1,minHp:sample.minHp,mp0:sample.mp0,mp1:sample.mp1,maxHp1:sample.maxHp1,maxMp1:sample.maxMp1,potionHeals:sample.potionHeals,healSkillCasts:sample.healSkillCasts,healingObserved:sample.healingObserved,consumed:sample.consumed,reusable},lastBatch:{ms:fastTotal,kills:killsTotal,batches,resourceShort},wallStepMs:performance.now()-wall0};
           try{save();a30Checkpoint('a9950-low-compute-segment',true)}catch(e){}
           if(state.dead||Number(job.remaining||0)<TICK)break;
           stat.yields++;await wait0();
@@ -35754,6 +35787,233 @@ const A9950_BUILD='B1.0 Alpha99.50';
   const rb=render;render=function(){const r=rb.apply(this,arguments);applyVersion();return r};
 
   window.__A9950_TEST__={build:A9950_BUILD,audit,probe,runtimeProbe,setTestMobile:(v)=>{P.testMobile=v==null?null:!!v;return{mobile:mobile()}},last:()=>P.last,previous:window.__A9949_TEST__};
+})();
+
+
+// ===== Alpha99.52：四角色連續離線結算 / 高速擊殺核心精簡 =====
+// 根因：Alpha99.50 長時間離線雖只做一次校準，但高速段仍逐隻呼叫最外層 killMob，
+// 會穿過大量 UI/試煉/精通/地區/夢幻等包裝層。連續讀取 4 角色時，CPU 工作會疊在短時間內。
+// 本層只攔截「offlineSettling + a9881.active + 模擬時鐘 + 滿血新怪」這個高速直殺特徵；
+// 正常前景擊殺與精確 replay（怪物 HP 已降至 0）仍完整走原 killMob 鏈。
+const A9952_BUILD='B1.0 Alpha99.52';
+(()=>{
+  const K={fastKills:0,fallbackKills:0,fastDrops:0,regionDrops:0,lastReason:'',testForce:null,pending:new Map(),flushes:0};
+  const BASE_KILL=killMob;
+
+  function a9952Mobile(){
+    if(K.testForce!==null)return !!K.testForce;
+    try{const s=window.__A9948_TEST__?.stats?.();if(s&&typeof s.mobile==='boolean')return !!s.mobile}catch(e){}
+    const ua=String(navigator?.userAgent||'');if(/Android|iPhone|iPad|iPod|Mobile/i.test(ua))return true;
+    try{return !!matchMedia?.('(pointer: coarse)')?.matches&&Math.min(Number(innerWidth||9999),Number(innerHeight||9999))<=1000}catch(e){return false}
+  }
+  function a9952DirectFastContext(i){
+    const x=state?.mobs?.[i];
+    if(!x||x.dead||!(Number(x.maxHp||0)>0))return false;
+    if(!state?.a45?.offlineSettling||!state?.a9881?.active)return false;
+    if(!(typeof A45_SIM_NOW!=='undefined'&&A45_SIM_NOW>0))return false;
+    // 99.50 directKillsResponsive 專屬特徵：newMob() 後仍是滿血，直接呼叫 killMob。
+    if(Math.abs(Number(x.hp||0)-Number(x.maxHp||0))>.0001||Number(x.hp||0)<=0)return false;
+    return a9952Mobile();
+  }
+  function a9952ActiveTrial(){
+    try{return typeof a9Stage==='function'&&Number(a9Stage()||0)>0}catch(e){return false}
+  }
+  function a9952Unsafe(i,m){
+    if(!state||!m)return 'no-state-mob';
+    if(state.sherineWorld)return 'sherine-world'; // 席琳裝備詞綴有逐份實體掉落副作用，保留舊鏈。
+    if(String(state.mapId||'')==='dream_island')return 'dream-island'; // 特殊怪計數/控制器保留舊鏈。
+    try{if(typeof a452SpecialDef==='function'&&a452SpecialDef())return 'special-map'}catch(e){}
+    if(state?.boss?.fighting||m?.boss)return 'boss';
+    if(a9952ActiveTrial())return 'trial-active'; // 50級試煉逐殺任務物保留舊鏈。
+    return '';
+  }
+  function a9952OldFallbackIndependent(mid,name){
+    if(name==='邪惡思克巴')return true; // Alpha99.42：14 列獨立判定。
+    try{
+      const st=window.__A9878_TEST__?.status?.(mid);
+      if(st?.kind==='old-afei-fallback')return true;
+    }catch(e){}
+    return false;
+  }
+  function a9952GrantItem(id,qty,mobName,source='hunt'){
+    qty=Math.max(1,Math.floor(Number(qty)||1));
+    if(!DATA.items?.[id])return false;
+    try{if(typeof A42_LIVE_ABSENT_OLD_IDS!=='undefined'&&A42_LIVE_ABSENT_OLD_IDS.has(id))return false}catch(e){}
+    const mob=String(mobName||''),src=String(source||'hunt'),key=id+'\u0001'+src+'\u0001'+mob;
+    const row=K.pending.get(key)||{id,source:src,mob,qty:0,events:0};row.qty+=qty;row.events++;K.pending.set(key,row);
+    state.session.items=Number(state.session.items||0)+qty;K.fastDrops+=qty;
+    return true;
+  }
+  function a9952FlushDrops(){
+    if(!K.pending.size)return 0;let total=0;
+    const rows=[...K.pending.values()];K.pending.clear();
+    for(const row of rows){
+      const qty=Math.max(1,Math.floor(Number(row.qty)||1));
+      const ok=typeof a8Add==='function'?a8Add(row.id,qty):false;if(!ok)continue;total+=qty;
+      try{
+        if(typeof a70RecordLoot==='function'){
+          const x=typeof a70Ensure==='function'?a70Ensure():null,before=Number(x?.stats?.events||0);
+          a70RecordLoot(row.id,qty,row.source,{mob:row.mob});
+          // 保留原本「每次實際掉落算一個事件」的統計語意；UI 紀錄則合併為一筆。
+          if(x?.stats&&row.events>1)x.stats.events=before+row.events;
+        }
+      }catch(e){}
+    }
+    K.flushes++;return total;
+  }
+  function a9952FastDrop(x,m){
+    const name=String(m?.n||'');if(!name)return null;
+    // Dream Island 已在 unsafe 排除，因此不需要 alias；一般地圖直接使用當前怪名表。
+    const rows=DATA.dropsByMobName?.[name];if(!Array.isArray(rows)||!rows.length)return null;
+    const independent=a9952OldFallbackIndependent(String(x?.id||''),name);
+    let first=null;
+    if(independent){
+      for(const row of rows){
+        const id=String(row?.[0]||''),pct=Math.max(0,Number(row?.[1]||0));if(!id||pct<=0)continue;
+        try{if(typeof A42_LIVE_ABSENT_OLD_IDS!=='undefined'&&A42_LIVE_ABSENT_OLD_IDS.has(id))continue}catch(e){}
+        if(Math.random()*100<pct&&a9952GrantItem(id,1,name,'hunt')&&!first)first=id;
+      }
+      return first;
+    }
+    for(const row of rows){
+      const id=String(row?.[0]||''),pct=Math.max(0,Number(row?.[1]||0));if(!id||pct<=0)continue;
+      try{if(typeof A42_LIVE_ABSENT_OLD_IDS!=='undefined'&&A42_LIVE_ABSENT_OLD_IDS.has(id))continue}catch(e){}
+      if(Math.random()*100<pct){if(a9952GrantItem(id,1,name,'hunt'))first=id;break}
+    }
+    return first;
+  }
+  function a9952MasteryKill(){
+    try{
+      if(state?.player?.cls==='mage'&&typeof a975State==='function'&&typeof A975_CFG!=='undefined'){
+        const st=a975State('mdrain'),cfg=A975_CFG.mdrain,target=Number(cfg?.targets?.[st.lv]||0);
+        if(st&&typeof A22_MASTERIES!=='undefined'&&st.lv<A22_MASTERIES.mdrain.cap&&Number(st.exp||0)<target)st.exp=Math.min(target,Number(st.exp||0)+1);
+      }
+    }catch(e){}
+    try{
+      if(state?.player?.cls!=='knight'||typeof a980ActiveSlot!=='function')return;
+      const active=a980ActiveSlot(),map=String(state.mapId||'');
+      if(active==='wm1'){
+        const st=a980WmState('wm1'),zone=a980WmZoneId('wm1'),t=Number(A979_WM1_TARGETS?.[st.lv]||0);
+        if(st?.boundWeaponId&&st.lv<5&&zone&&map===zone&&Number(st.exp||0)<t){const mul=typeof a980RiseOn==='function'&&a980RiseOn('wm1')?a980RiseMultiplier('wm1'):1;st.exp=Math.min(t,Number(st.exp||0)+Math.max(1,Number(mul)||1))}
+      }else if(active==='wm2'){
+        const st=a980WmState('wm2'),zone=a980WmZoneId('wm2'),t=Number(A980_WM2_TARGETS?.[st.lv]||0);
+        if(st?.unlocked&&st.boundWeaponId&&st.lv<5&&zone&&map===zone&&Number(st.exp||0)<t){const mul=typeof a980RiseOn==='function'&&a980RiseOn('wm2')?a980RiseMultiplier('wm2'):1;st.exp=Math.min(t,Number(st.exp||0)+Math.max(1,Number(mul)||1))}
+      }
+    }catch(e){}
+  }
+  function a9952RegionKill(){
+    try{
+      const mapId=String(state?.mapId||''),got=window.__A9878_TEST__?.regionRoll?.(mapId);
+      if(!Array.isArray(got)||!got.length)return;
+      for(const id of got)if(a9952GrantItem(id,1,'地區掉落','region'))K.regionDrops++;
+    }catch(e){}
+  }
+  function a9952FastKill(i){
+    const x=state?.mobs?.[i],m=mobData(x);if(!x||!m)return BASE_KILL(i);
+    const unsafe=a9952Unsafe(i,m);if(unsafe){K.fallbackKills++;K.lastReason=unsafe;return BASE_KILL(i)}
+    const lvBefore=Math.max(1,Number(state.player?.lv||1));
+    const baseExp=Math.max(1,Number(m.exp||m.lv||1));
+    const gmin=Math.max(0,Number(m.goldMin||0)),gmax=Math.max(gmin,Number(m.goldMax||gmin));
+    const baseGold=Math.max(0,Math.floor(gmin+Math.random()*(gmax-gmin+1)));
+    const rw=typeof a35RewardPreview==='function'?a35RewardPreview(lvBefore,baseExp,baseGold):{finalExp:baseExp,finalGold:baseGold,expMultiplier:1,goldMultiplier:1,bonusPct:0};
+    const finalExp=Math.max(0,Math.floor(Number(rw.finalExp??baseExp))),finalGold=Math.max(0,Math.floor(Number(rw.finalGold??baseGold)));
+
+    try{setClip(x,'death')}catch(e){x.clip='death'}
+    x.hp=0;x.dead=true;x.hitFlash=0;
+    x.respawnAt=(typeof A45_SIM_NOW!=='undefined'&&A45_SIM_NOW>0?A45_SIM_NOW:performance.now())+Math.min(900,350+((typeof a45ActualAnimCount==='function'?a45ActualAnimCount(m.n,'death'):0)||4)*70);
+    state.player.exp=Number(state.player.exp||0)+finalExp;state.player.gold=Number(state.player.gold||0)+finalGold;
+    state.session.kills=Number(state.session.kills||0)+1;state.session.exp=Number(state.session.exp||0)+finalExp;state.session.gold=Number(state.session.gold||0)+finalGold;
+    a9952FastDrop(x,m);
+    try{levelCheck()}catch(e){}
+    try{
+      if(typeof a35EnsureState==='function')a35EnsureState();
+      if(state.a35){const eb=Math.max(0,finalExp-baseExp),gb=Math.max(0,finalGold-baseGold);state.a35.killsSynced=Number(state.a35.killsSynced||0)+1;state.a35.catchupExpGranted=Number(state.a35.catchupExpGranted||0)+eb;state.a35.goldBonusGranted=Number(state.a35.goldBonusGranted||0)+gb;state.a35.lastReward={at:Date.now(),mob:m.n,lvBefore,baseExp,finalExp,expMultiplier:Number(rw.expMultiplier||1),baseGold,finalGold,goldMultiplier:Number(rw.goldMultiplier||1)}}
+    }catch(e){}
+    a9952MasteryKill();
+    a9952RegionKill();
+    K.fastKills++;
+    // 讓高速批次中前段掉到的箭矢/藥水能在下一個 fast batch 前真正進背包；
+    // 每 600 殺才合併寫一次，避免恢復成逐件寫入。
+    if(K.fastKills%600===0)a9952FlushDrops();
+    K.lastReason='fast-direct';
+    return true;
+  }
+
+  killMob=function(i){
+    if(a9952DirectFastContext(i))return a9952FastKill(i);
+    return BASE_KILL.apply(this,arguments);
+  };
+
+  const A9952_DIFF_BASE=a45OfflineDiff;
+  a45OfflineDiff=function(b){a9952FlushDrops();return A9952_DIFF_BASE.apply(this,arguments)};
+  const A9952_FINISH_BASE=a45FinishOffline;
+  a45FinishOffline=function(job,notify=true){a9952FlushDrops();return A9952_FINISH_BASE.apply(this,arguments)};
+
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9952_BUILD}catch(e){document.title='樓梯口天堂 · '+A9952_BUILD}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9952_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.52｜四角色連續離線結算降溫｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9952_BUILD+' · 離線高速擊殺精簡'}catch(e){}
+    try{window.__BUILD_VERSION__=A9952_BUILD;if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.multiOfflineThermal='alpha99.52-fast-kill-shortcut'}}catch(e){}
+  }
+  function stats(){return{build:A9952_BUILD,fastKills:K.fastKills,fallbackKills:K.fallbackKills,fastDrops:K.fastDrops,regionDrops:K.regionDrops,flushes:K.flushes,pending:K.pending.size,lastReason:K.lastReason,mobile:a9952Mobile()}}
+  function reset(){K.fastKills=K.fallbackKills=K.fastDrops=K.regionDrops=K.flushes=0;K.pending.clear();K.lastReason='';return stats()}
+  function audit(){
+    const issues=[],p50=window.__A9950_TEST__?.audit?.(),p48=window.__A9948_TEST__?.audit?.(),multi=window.__A9869_TEST__?.audit?.();
+    if(p50?.ok!==true)issues.push('Alpha99.50 離線低運算回歸');if(p48?.ok!==true)issues.push('Alpha99.48 手機效能回歸');
+    if(multi?.ok!==true||Number(multi?.slots)!==4||Number(multi?.owner)!==0)issues.push('四角色獨立離線政策異常');
+    if(A45_OFFLINE_TICK_MS!==100)issues.push('100ms 精確 replay 被改動');if(A46_OFFLINE_CAP_MS!==86400000)issues.push('24h 上限被改動');
+    return{ok:issues.length===0,build:A9952_BUILD,issues,previous:p50,front:p48,multi,stats:stats()};
+  }
+  async function probe(){
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      const a=audit();add('核心與四角色政策',a.ok,a);
+      add('100ms 精確 replay 保留',A45_OFFLINE_TICK_MS===100,{tick:A45_OFFLINE_TICK_MS});
+      add('24小時上限保留',A46_OFFLINE_CAP_MS===86400000,{cap:A46_OFFLINE_CAP_MS});
+      const p48=await window.__A9948_TEST__?.probe?.();add('Alpha99.48 前景手機效能',p48?.ok===true,{passed:p48?.passed,total:p48?.total});
+      const p33=window.__A9933_TEST__?.probe?.();add('Alpha99.33/34 離線補血消耗',p33?.ok===true,{passed:p33?.passed,total:p33?.total});
+    }catch(e){add('Alpha99.52 probe exception',false,{error:String(e?.stack||e)})}
+    finally{applyVersion()}
+    return{ok:rows.every(x=>x.ok),build:A9952_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+  async function cacheReuseProbe(simMs=10*60*1000){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null;
+    const active=typeof a46ActiveSlot==='undefined'?0:a46ActiveSlot,pending=typeof a46PendingSlot==='undefined'?0:a46PendingSlot;
+    const hadRaf=typeof raf!=='undefined'&&!!raf,oldForce=K.testForce;const rows=[];
+    try{
+      if(hadRaf){try{cancelAnimationFrame(raf)}catch(e){};raf=0}
+      K.testForce=true;a76TestReset('knight',80);state.inVillage=false;state.mapId='training';state.lastHuntMap='training';state.dead=false;state.running=false;derive();
+      state.player.maxHp=1e9;state.player.hp=1e9;state.player.maxMp=1e9;state.player.mp=1e9;state.player.exp=-1e12;spawnAll();a45EnsureState();delete state.a9952OfflineCache;
+      async function once(n){
+        state.dead=false;state.running=false;state.a36.background={...(state.a36.background||{}),active:true,wasRunning:true,mapId:state.mapId,hiddenAt:1700000000000+n*10000000};state.a45.offlineSettling=false;state.a45.offlineJob=null;A45_SIM_NOW=0;A45_SIM_EPOCH=Number(state.a36.background.hiddenAt);
+        const job={reason:'a9952-cache-'+n,totalElapsed:simMs,remaining:simMs,processed:0,wanted:true,sameMap:true,accum:{kills:0,exp:0,gold:0,items:{}}};const t=performance.now();a45ProcessOffline(job,false);const end=t+30000;
+        while(state?.a45?.offlineSettling&&performance.now()<end)await new Promise(r=>setTimeout(r,5));
+        const last=window.__A9950_TEST__?.last?.()||{};return{ok:!state?.a45?.offlineSettling,wallMs:performance.now()-t,cacheHits:Number(last.cacheHits||0),cacheMisses:Number(last.cacheMisses||0),calibrations:Number(last.calibrations||0),exactMs:Number(last.exactMs||0),fastMs:Number(last.fastMs||0),directKills:Number(last.directKills||0),hasCache:!!state.a9952OfflineCache};
+      }
+      rows.push(await once(1));
+      // 模擬四次連續讀取「已有穩態快取」的離線角色。
+      for(let n=2;n<=5;n++)rows.push(await once(n));
+      // 改動任一自動設定後，簽章必須失效並重新完整校準，避免錯用舊角色模型。
+      state.autoCombat=state.autoCombat||{};state.autoCombat.healPct=Number(state.autoCombat.healPct||70)+1;rows.push(await once(6));
+      const cached=rows.slice(1,5),cachedWall=cached.reduce((n,x)=>n+Number(x.wallMs||0),0);
+      return{ok:rows.every(x=>x.ok)&&rows[0].hasCache&&cached.every(x=>x.cacheHits>0&&x.exactMs<=31000)&&rows[5].cacheMisses>0&&rows[5].calibrations>0,build:A9952_BUILD,rows,cachedFour:{totalWallMs:cachedWall,avgWallMs:cachedWall/4},stats:stats()};
+    }catch(e){return{ok:false,build:A9952_BUILD,error:String(e?.stack||e),rows}}
+    finally{K.testForce=oldForce;A45_SIM_NOW=0;A45_SIM_EPOCH=0;try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(snap){state=snap;derive();render()}else state=null}catch(e){}if(hadRaf&&typeof raf!=='undefined'&&!raf){try{last=performance.now();raf=requestAnimationFrame(loop)}catch(e){}}applyVersion()}
+  }
+
+  async function fourRoleThermalProbe(simMs=2*60*60*1000){
+    reset();const rows=[],t0=performance.now();
+    for(let n=0;n<4;n++){
+      const r=await window.__A9950_TEST__?.runtimeProbe?.(simMs,123456+n);
+      rows.push({slot:n+1,ok:!!r?.ok,wallMs:Number(r?.wallMs||0),maxGap:Number(r?.maxGap||0),kills:Number(r?.last?.directKills||0),calibrations:Number(r?.last?.calibrations||0)});
+      await new Promise(r=>setTimeout(r,0));
+    }
+    const out={ok:rows.every(x=>x.ok),build:A9952_BUILD,totalWallMs:performance.now()-t0,rows,stats:stats()};applyVersion();return out;
+  }
+
+  applyVersion();
+  window.__A9952_TEST__={build:A9952_BUILD,audit,probe,stats,reset,cacheReuseProbe,fourRoleThermalProbe,setTestMobile:(v)=>{K.testForce=v==null?null:!!v;return stats()},previous:window.__A9951_TEST__||window.__A9950_TEST__};
 })();
 
 
@@ -35911,4 +36171,62 @@ const A9950_BUILD='B1.0 Alpha99.50';
 
 
 
+
+<!-- ===== Alpha99.51：移除人物左側備援棋子 ===== -->
+<style id="a9951-hide-player-fallback">
+/* 角色圖片已正常提供；隱藏原本只作為圖片載入失敗備援的 ♟ 圖示。
+   僅影響玩家側備援元素，不改角色圖片、位置、碰撞/點擊、戰鬥或任何數值。 */
+.player-fallback{
+  display:none!important;
+}
+</style>
+<script id="a9951-version-patch">
+(()=>{
+  const BUILD='B1.0 Alpha99.51';
+  function apply(){
+    try{document.title='樓梯口天堂 · '+BUILD}catch(e){}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.51｜移除人物左側備援棋子｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=BUILD+' · 人物棋子移除'}catch(e){}
+    try{window.__BUILD_VERSION__=BUILD;if(window.state){state.saveMeta=state.saveMeta||{};state.saveMeta.playerFallbackHidden='alpha99.51'}}catch(e){}
+  }
+  apply();
+  if(typeof render==='function'){const b=render;render=function(){const r=b.apply(this,arguments);apply();return r}}
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);apply();return r}}
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);apply();return r}}
+  window.__A9951_TEST__={
+    build:BUILD,
+    audit:()=>{
+      const el=document.querySelector('.player-fallback');
+      const hidden=!el||getComputedStyle(el).display==='none';
+      return {
+        ok:hidden,
+        build:BUILD,
+        fallbackPresent:!!el,
+        fallbackDisplay:el?getComputedStyle(el).display:'missing',
+        playerImagePresent:!!document.querySelector('#player-img'),
+        previous:window.__A9950_TEST__?.audit?.()||null
+      };
+    },
+    applyVersion:apply,
+    previous:window.__A9950_TEST__
+  };
+})();
+</script>
+
+
+<script id="a9952-final-version">
+(()=>{
+  const B='B1.0 Alpha99.52';
+  function apply(){
+    window.__BUILD_VERSION__=B;
+    try{document.title='樓梯口天堂 · '+B}catch(e){}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.52｜四角色連續離線結算降溫｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 四角色離線降溫'}catch(e){}
+  }
+  apply();setTimeout(apply,0);
+  window.addEventListener('pageshow',apply,{passive:true});
+})();
+</script>
 </body></html>
