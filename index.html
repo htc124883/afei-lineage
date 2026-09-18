@@ -34345,7 +34345,7 @@ const A9940_BUILD='B1.0 Alpha99.40';
   // 魔法是該次怪物攻擊的替代動作，不與同一拍的物理傷害疊加。
   const a9940MobAttackBase=mobAttack;
   mobAttack=function(i){
-    if(a9940IsDream()){
+    if(a9940IsDream()&&!window.__A9945_DREAM_NO_SKILLS__){
       try{if(a9940CastDreamMagic(i))return true}catch(e){try{console.error('Alpha99.40 dream magic',e)}catch(_e){}}
     }
     return a9940MobAttackBase.apply(this,arguments);
@@ -34865,8 +34865,159 @@ const A9944_BUILD='B1.0 Alpha99.44';
   a9944ApplyVersion();
 })();
 
+// ===== Alpha99.45：夢幻之島全怪純物理攻擊 =====
+const A9945_BUILD='B1.0 Alpha99.45';
+(()=>{
+  const DREAM='dream_island';
+  window.__A9945_DREAM_NO_SKILLS__=true;
+
+  function a9945ApplyVersion(){
+    window.__A9945_DREAM_NO_SKILLS__=true;
+    try{document.title=A41_BRAND+' · '+A9945_BUILD}catch(e){document.title='樓梯口天堂 · '+A9945_BUILD}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9945_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.45｜夢幻之島17隻全怪純物理攻擊｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9945_BUILD+' · 夢幻全怪不放技能'}catch(e){}
+    try{window.__BUILD_VERSION__=A9945_BUILD;if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.dreamNoMonsterSkills='alpha99.45'}}catch(e){}
+  }
+
+  function a9945Audit(){
+    const pool=Array.isArray(DATA.maps?.[DREAM])?DATA.maps[DREAM].filter(id=>DATA.mobs?.[id]):[];
+    const skillRows=[];
+    for(const id of pool){
+      const m=DATA.mobs?.[id]||{};
+      const skills=[m.mag,m.mag2,m.mag3].filter(Boolean).map(x=>x.skn||x.name||x.type||'skill');
+      if(skills.length)skillRows.push({id,name:m.n||id,skills});
+    }
+    return{ok:window.__A9945_DREAM_NO_SKILLS__===true&&pool.length===17,build:A9945_BUILD,poolCount:pool.length,skillDataKept:skillRows,executionDisabled:true};
+  }
+
+  function a9945Probe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null,oldRand=Math.random,rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      a76TestReset('knight',80);state.inVillage=false;state.mapId=DREAM;state.running=true;derive();state.player.hp=Math.max(5000,Number(state.player.maxHp||0));state.player.maxHp=state.player.hp;
+      const pool=Array.isArray(DATA.maps?.[DREAM])?DATA.maps[DREAM].filter(id=>DATA.mobs?.[id]):[];
+      window.__A9945_DREAM_NO_SKILLS__=true;
+      let allPhysical=true,details=[];
+      Math.random=()=>0;
+      for(const id of pool){
+        const d=DATA.mobs[id],hp=Math.max(1,Number(d.hp||5));
+        state.mobs=[{id,hp,maxHp:hp,clip:'idle',frame:0,ft:0,dead:false,respawnAt:0,hitFlash:0,nextAtk:0}];state.target=0;state.running=true;state.player.hp=state.player.maxHp;
+        state.a9919=state.a9919||{};state.a9919.poison=null;
+        const before=state.player.hp;const logStart=Array.isArray(logLines)?logLines.length:0;
+        mobAttack(0);
+        const recent=Array.isArray(logLines)?logLines.slice(logStart).join(' | '):'';
+        const poisoned=!!(state.a9919&&state.a9919.poison);
+        const skillLog=/怪物魔法|中毒|冰錐|火球|水柱|龍捲風|巨石之擊/.test(recent);
+        const ok=!poisoned&&!skillLog&&state.player.hp<before;
+        if(!ok)allPhysical=false;details.push({id,name:d.n||id,ok,damage:before-state.player.hp,poisoned,log:recent.slice(0,180)});
+      }
+      add('夢幻17隻攻擊均不觸發技能/中毒',allPhysical,{failed:details.filter(x=>!x.ok),count:details.length});
+      add('夢幻17隻仍可造成普通物理傷害',details.every(x=>x.damage>0),{min:Math.min(...details.map(x=>x.damage)),max:Math.max(...details.map(x=>x.damage))});
+      add('Alpha99.44等權重生怪仍保留',window.__A9944_TEST__?.audit?.().ok===true,window.__A9944_TEST__?.audit?.());
+      const aud=a9945Audit();add('Alpha99.45靜態稽核',aud.ok,aud);
+    }catch(e){add('Alpha99.45 probe',false,{error:String(e?.stack||e)})}
+    finally{Math.random=oldRand;window.__A9945_DREAM_NO_SKILLS__=true;try{if(snap){state=snap;derive();render()}else state=null}catch(e){}a9945ApplyVersion()}
+    return{ok:rows.every(x=>x.ok),build:A9945_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+
+  const a9945RenderBase=render;render=function(){window.__A9945_DREAM_NO_SKILLS__=true;const r=a9945RenderBase.apply(this,arguments);a9945ApplyVersion();return r};
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);a9945ApplyVersion();return r}}
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);a9945ApplyVersion();return r}}
+  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);a9945ApplyVersion();return r}}
+  window.__A9945_TEST__={build:A9945_BUILD,audit:a9945Audit,probe:a9945Probe};
+  a9945ApplyVersion();
+})();
 
 
+
+})();
+
+
+// ===== Alpha99.46：夢幻之島怪物掉落表顯示與實際掉落來源一致 =====
+const A9946_BUILD='B1.0 Alpha99.46';
+(()=>{
+  const DREAM='dream_island';
+  function a9946DropKey(m){
+    const name=String(m?.n||'');
+    if(String(state?.mapId||'')===DREAM&&typeof a80DropKey==='function')return String(a80DropKey(m,DREAM)||name);
+    return name;
+  }
+  function a9946Rows(m){
+    const key=a9946DropKey(m),rows=DATA.dropsByMobName?.[key];
+    return{key,rows:Array.isArray(rows)?rows:[]};
+  }
+
+  // Alpha97.2 的怪物詳情原本只用 m.n 查掉落表，會讓夢幻四精靈王顯示一般同名表。
+  // 只在夢幻之島、且實際掉落 key 與顯示名不同時，暫時映射成同一張表後再交回原 UI renderer。
+  const a9946MobDetailBase=a972MobDetailHtml;
+  a972MobDetailHtml=function(name){
+    const hit=a972MobByName(name);
+    if(!hit||String(state?.mapId||'')!==DREAM)return a9946MobDetailBase(name);
+    const mobName=String(hit.m?.n||name),info=a9946Rows(hit.m);
+    if(!info.key||info.key===mobName)return a9946MobDetailBase(name);
+    const had=Object.prototype.hasOwnProperty.call(DATA.dropsByMobName,mobName),old=DATA.dropsByMobName[mobName];
+    DATA.dropsByMobName[mobName]=info.rows;
+    try{return a9946MobDetailBase(name)}
+    finally{if(had)DATA.dropsByMobName[mobName]=old;else delete DATA.dropsByMobName[mobName]}
+  };
+
+  function a9946ApplyVersion(){
+    try{document.title=A41_BRAND+' · '+A9946_BUILD}catch(e){document.title='樓梯口天堂 · '+A9946_BUILD}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9946_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.46｜夢幻之島17隻掉落表顯示校正｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9946_BUILD+' · 夢幻掉落表對表修正'}catch(e){}
+    try{window.__BUILD_VERSION__=A9946_BUILD;if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.dreamDropDisplayFix='alpha99.46'}}catch(e){}
+  }
+
+  function a9946Audit(){
+    const pool=Array.isArray(DATA.maps?.[DREAM])?DATA.maps[DREAM]:[],rows=[],issues=[];
+    const expect={'火精靈王':8,'水精靈王':8,'風精靈王':9,'地精靈王':8};
+    for(const id of pool){
+      const m=DATA.mobs?.[id],info=a9946Rows(m),bad=info.rows.filter(r=>!DATA.items?.[r?.[0]]||!Number.isFinite(Number(r?.[1]))||Number(r?.[1])<0||Number(r?.[1])>100);
+      const rec={id,name:m?.n||id,key:info.key,count:info.rows.length,bad:bad.length};rows.push(rec);
+      if(!m)issues.push(id+' 怪物資料不存在');
+      if(!info.rows.length)issues.push((m?.n||id)+' 掉落表為空');
+      if(bad.length)issues.push((m?.n||id)+' 掉落表有無效列 '+bad.length);
+      if(expect[m?.n]!=null&&info.rows.length!==expect[m.n])issues.push(m.n+' 應顯示 '+expect[m.n]+' 項，實際 '+info.rows.length);
+    }
+    return{ok:pool.length===17&&issues.length===0,build:A9946_BUILD,poolCount:pool.length,issues,rows};
+  }
+
+  function a9946Probe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null,oldRand=Math.random,rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      a76TestReset('knight',80);state.inVillage=false;state.mapId=DREAM;state.running=false;state.inventory={};state.session={start:Date.now(),kills:0,exp:0,gold:0,items:0};derive();
+      const pool=DATA.maps[DREAM]||[];
+      for(const id of pool){
+        const m=DATA.mobs[id],hp=Math.max(1,Number(m?.hp||1));
+        state.mobs=[{id,hp,maxHp:hp,clip:'idle',frame:0,ft:0,dead:false,respawnAt:0,hitFlash:0,nextAtk:Number.MAX_SAFE_INTEGER}];
+        const info=a9946Rows(m),html=a972MobDetailHtml(m.n),shown=(html.match(/data-a972-item=/g)||[]).length;
+        add(m.n+' 詳情表與實際表列數一致',shown===info.rows.length,{id,key:info.key,expected:info.rows.length,shown});
+      }
+      Math.random=()=>0;
+      for(const id of pool){
+        const m=DATA.mobs[id],info=a9946Rows(m),expected=info.rows?.[0]?.[0]||null;
+        state.inventory={};state.session.items=0;
+        const got=rollDrop(m);
+        add(m.n+' 正式掉落鏈使用正確首列',!!expected&&got===expected,{id,key:info.key,expected,got});
+      }
+      const four=['nm_028','nm_029','nm_030','nm_031'].map(id=>{const m=DATA.mobs[id],x=a9946Rows(m);return{name:m.n,key:x.key,count:x.rows.length}});
+      add('四精靈王使用夢幻專屬表',four.every(x=>x.key.startsWith('夢幻之島')&&x.count>0),{four});
+    }catch(e){add('Alpha99.46 probe',false,{error:String(e?.stack||e)})}
+    finally{Math.random=oldRand;try{if(snap){state=snap;derive();render()}else state=null}catch(e){}}
+    return{ok:rows.every(x=>x.ok),build:A9946_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,failed:rows.filter(x=>!x.ok).length,rows};
+  }
+
+  const a9946RenderBase=render;
+  render=function(){const r=a9946RenderBase.apply(this,arguments);a9946ApplyVersion();return r};
+  const a9946InitBase=init;
+  init=function(){const r=a9946InitBase.apply(this,arguments);a9946ApplyVersion();return r};
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);a9946ApplyVersion();return r}};
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);a9946ApplyVersion();return r}};
+  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);a9946ApplyVersion();return r}};
+
+  window.__A9946_TEST__={build:A9946_BUILD,audit:a9946Audit,probe:a9946Probe,rows:(id)=>a9946Rows(DATA.mobs?.[id])};
+  a9946ApplyVersion();
 })();
 </script>
 
