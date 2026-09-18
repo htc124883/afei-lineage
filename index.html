@@ -36379,6 +36379,198 @@ const A9954_BUILD='B1.0 Alpha99.54';
 })();
 
 
+// ===== Alpha99.55：潘朵拉取消「累計10次 → 下一抽免費」 =====
+// 使用者自訂規則：完整移除累計抽獎／免費下一抽。
+// 保留單抽 300,000、十連抽 1、世界王抽獎、獎池與機率。
+(()=>{
+  const A9955_BUILD='B1.0 Alpha99.55';
+  const A9955_SINGLE_COST=300000;
+  const A9955_TEN_COST=1;
+
+  const a9955EnsureBase=a9842Ensure;
+  a9842Ensure=function(){
+    const r=a9955EnsureBase.apply(this,arguments);
+    if(state?.a9842?.pandora){
+      // 舊存檔相容：欄位保留但規則永久停用。
+      state.a9842.pandora.progress=0;
+      state.a9842.pandora.freeReady=false;
+      state.a9842.pandora.pityRemoved=true;
+    }
+    return r;
+  };
+
+  a9842PandoraSingle=function(kind='gold'){
+    a9842Ensure();
+    const p=state.a9842.pandora;
+    if(Number(state.player.lv||0)<41){toast('潘朵拉需 Lv.41');return false}
+    let tag='潘朵拉';
+    if(kind==='wb'){
+      if(p.worldBossDraws<1){toast('沒有世界王抽獎資格');return false}
+      p.worldBossDraws--;
+      tag='世界王抽獎';
+    }else{
+      if(Number(state.player.gold||0)<A9955_SINGLE_COST){toast('金幣不足');return false}
+      state.player.gold-=A9955_SINGLE_COST;
+    }
+    const roll=a9842PandoraRoll();
+    if(!a9842PandoraAward(roll,tag))return false;
+    p.progress=0;p.freeReady=false;
+    save();renderHUDDynamic();
+    return roll;
+  };
+
+  a9842PandoraTen=function(){
+    a9842Ensure();
+    const p=state.a9842.pandora;
+    if(Number(state.player.lv||0)<41){toast('潘朵拉需 Lv.41');return false}
+    if(Number(state.player.gold||0)<A9955_TEN_COST){toast('金幣不足');return false}
+    state.player.gold-=A9955_TEN_COST;
+    const rs=[];
+    for(let i=0;i<10;i++){
+      const roll=a9842PandoraRoll();
+      if(roll?.id){
+        a9842PandoraAward(roll,'潘朵拉十連');
+        rs.push(roll);
+      }
+    }
+    p.progress=0;p.freeReady=false;
+    save();renderHUDDynamic();
+    return rs;
+  };
+
+  a9842RenderPandora=function(npc){
+    const box=document.getElementById('village-action');
+    if(!box||!state)return;
+    a9842Ensure();
+    const p=state.a9842.pandora,lv=Number(state.player.lv||1),ok=lv>=41;
+    box.innerHTML=
+      '<div class="village-section-title">潘朵拉的黑市</div>'+
+      '<div class="a7-note">花金幣轉動命運的齒輪。可抽中完整 330 種獎池（含 ★傳說級）。需 Lv.41。</div>'+
+      '<div class="a9842-head"><span>世界王抽獎 <b>'+p.worldBossDraws+'</b></span></div>'+
+      '<div class="a9842-actions">'+
+        '<button class="a7-btn alt" data-a9842-p1 '+(ok?'':'disabled')+'>單抽 300,000</button>'+
+        '<button class="a7-btn" data-a9842-p10 '+(ok?'':'disabled')+'>十連抽 1</button>'+
+        '<button class="a7-btn" data-a9842-pwb '+(ok&&p.worldBossDraws>0?'':'disabled')+'>世界王抽獎</button>'+
+        '<button class="a7-btn" data-a9842-pinfo>獎勵查看</button>'+
+      '</div>'+
+      '<div id="a9842-pandora-info" style="display:none;margin-top:8px">'+a9842PandoraInfoHtml()+'</div>';
+
+    box.querySelector('[data-a9842-p1]').onclick=()=>{
+      const r=a9842PandoraSingle('gold');
+      if(r){toast('獲得 '+DATA.items[r.id].n);a9842RenderPandora(npc)}
+    };
+    box.querySelector('[data-a9842-p10]').onclick=()=>{
+      const rs=a9842PandoraTen();
+      if(rs){toast('十連抽完成');a9842RenderPandora(npc)}
+    };
+    box.querySelector('[data-a9842-pwb]').onclick=()=>{
+      const r=a9842PandoraSingle('wb');
+      if(r){toast('獲得 '+DATA.items[r.id].n);a9842RenderPandora(npc)}
+    };
+    box.querySelector('[data-a9842-pinfo]').onclick=()=>{
+      const e=box.querySelector('#a9842-pandora-info');
+      e.style.display=e.style.display==='none'?'block':'none';
+    };
+  };
+
+  function applyVersion(){
+    try{document.title=A41_BRAND+' · '+A9955_BUILD}catch(e){document.title='樓梯口天堂 · '+A9955_BUILD}
+    try{window.__BUILD_VERSION__=A9955_BUILD}catch(e){}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9955_BUILD}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9955_BUILD+' · 潘朵拉取消累計免費抽'}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.55｜潘朵拉取消累計免費抽｜PC＋手機'}catch(e){}
+  }
+
+  async function probe(){
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    const snap=state?JSON.parse(JSON.stringify(state)):null;
+    let madeBox=false;
+    try{
+      if(typeof a76TestReset==='function')a76TestReset('elf',50);
+      a9842Ensure();
+      state.player.lv=50;
+      state.player.gold=10000000;
+
+      state.a9842.pandora.progress=10;
+      state.a9842.pandora.freeReady=true;
+      a9842Ensure();
+      add('舊累計/免費抽狀態自動失效',
+        state.a9842.pandora.progress===0&&state.a9842.pandora.freeReady===false,
+        {progress:state.a9842.pandora.progress,freeReady:state.a9842.pandora.freeReady});
+
+      const g0=state.player.gold;
+      let singles=0;
+      for(let i=0;i<11;i++)if(a9842PandoraSingle('gold'))singles++;
+      add('連續11次單抽不再累積免費抽',
+        singles===11&&state.player.gold===g0-A9955_SINGLE_COST*11&&
+        state.a9842.pandora.progress===0&&state.a9842.pandora.freeReady===false,
+        {singles,goldBefore:g0,goldAfter:state.player.gold,progress:state.a9842.pandora.progress,freeReady:state.a9842.pandora.freeReady});
+
+      state.player.gold=100;
+      const inv0=Object.values(state.inventory||{}).reduce((a,b)=>a+Number(b||0),0);
+      const ten=a9842PandoraTen();
+      const inv1=Object.values(state.inventory||{}).reduce((a,b)=>a+Number(b||0),0);
+      add('十連仍為1金幣且發放10件',
+        Array.isArray(ten)&&ten.length===10&&state.player.gold===99&&inv1-inv0===10,
+        {gold:state.player.gold,rewards:ten?.length,itemDelta:inv1-inv0});
+      add('十連不再產生免費抽',
+        state.a9842.pandora.progress===0&&state.a9842.pandora.freeReady===false,
+        {progress:state.a9842.pandora.progress,freeReady:state.a9842.pandora.freeReady});
+
+      state.a9842.pandora.worldBossDraws=2;
+      const wbGold=state.player.gold;
+      const wb=a9842PandoraSingle('wb');
+      add('世界王抽獎保留且不扣金幣',
+        !!wb&&state.a9842.pandora.worldBossDraws===1&&state.player.gold===wbGold,
+        {remaining:state.a9842.pandora.worldBossDraws,goldBefore:wbGold,goldAfter:state.player.gold});
+
+      let box=document.getElementById('village-action');
+      if(!box){box=document.createElement('div');box.id='village-action';document.body.appendChild(box);madeBox=true}
+      a9842RenderPandora({id:'npc_pandora',n:'潘朵拉'});
+      const text=box.textContent||'';
+      const one=box.querySelector('[data-a9842-p1]'),tenBtn=box.querySelector('[data-a9842-p10]');
+      add('潘朵拉UI已移除累計免費抽',
+        !text.includes('累計抽獎')&&!text.includes('下一抽免費')&&
+        one?.textContent.trim()==='單抽 300,000'&&/十連抽\s*1/.test(tenBtn?.textContent||''),
+        {text:text.slice(0,300),single:one?.textContent||'',ten:tenBtn?.textContent||''});
+
+      const p54=window.__A9954_TEST__?.audit?.();
+      add('Alpha99.54變身選單核心維持正常',p54?.ok===true,p54||{});
+    }catch(e){
+      add('Alpha99.55 probe exception',false,{error:String(e?.stack||e)});
+    }finally{
+      try{if(madeBox)document.getElementById('village-action')?.remove()}catch(e){}
+      try{if(snap){state=snap;derive();render()}}catch(e){}
+      applyVersion();
+    }
+    return{ok:rows.every(x=>x.ok),build:A9955_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+
+  function audit(){
+    const issues=[];
+    try{
+      if(state){
+        a9842Ensure();
+        if(state.a9842.pandora.progress!==0||state.a9842.pandora.freeReady!==false)issues.push('累計免費抽狀態仍啟用');
+      }
+    }catch(e){issues.push('潘朵拉狀態檢查失敗')}
+    const p54=window.__A9954_TEST__?.audit?.();
+    if(p54?.ok!==true)issues.push('Alpha99.54回歸');
+    return{ok:issues.length===0,build:A9955_BUILD,issues,pityEnabled:false,singleCost:A9955_SINGLE_COST,tenCost:A9955_TEN_COST,previous:p54};
+  }
+
+  const renderBase=render;
+  render=function(){const r=renderBase.apply(this,arguments);try{if(state)a9842Ensure()}catch(e){}applyVersion();return r};
+  const loginBase=a46ShowLogin;
+  a46ShowLogin=function(){const r=loginBase.apply(this,arguments);applyVersion();return r};
+  const slotsBase=a46ShowSlots;
+  a46ShowSlots=function(){const r=slotsBase.apply(this,arguments);applyVersion();return r};
+
+  applyVersion();
+  window.__A9955_TEST__={build:A9955_BUILD,audit,probe,applyVersion,previous:window.__A9954_TEST__};
+})();
+
+
 
 })();
 </script>
@@ -36634,6 +36826,27 @@ const A9954_BUILD='B1.0 Alpha99.54';
 </style>
 <script id="a9954-final-version">
 (()=>{const B='B1.0 Alpha99.54';function a(){window.__BUILD_VERSION__=B;try{document.title='樓梯口天堂 · '+B}catch(e){}try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.54｜自動設定變身選單真正接入｜PC＋手機'}catch(e){}try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 變身選單 UI 修正'}catch(e){}}a();setTimeout(a,0);window.addEventListener('pageshow',a,{passive:true})})();
+</script>
+
+
+<script id="a9955-final-version">
+(()=>{
+  const B='B1.0 Alpha99.55';
+  function apply(){
+    window.__BUILD_VERSION__=B;
+    try{document.title='樓梯口天堂 · '+B}catch(e){}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.55｜潘朵拉取消累計免費抽｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 潘朵拉取消累計免費抽'}catch(e){}
+  }
+  apply();setTimeout(apply,0);
+  window.addEventListener('pageshow',apply,{passive:true});
+  try{
+    if(typeof render==='function'){const b=render;render=function(){const r=b.apply(this,arguments);apply();return r}}
+    if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);apply();return r}}
+    if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);apply();return r}}
+  }catch(e){}
+})();
 </script>
 
 </body></html>
