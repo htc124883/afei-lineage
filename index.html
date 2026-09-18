@@ -35007,6 +35007,226 @@ const A9947_BUILD='B1.0 Alpha99.47';
 })();
 
 
+// ===== Alpha99.48：手機前景戰鬥效能核心重構 =====
+// 只降低「畫面呈現」成本：戰鬥 tick、攻擊/技能公式、CD、掉落、EXP、離線收益完全沿用既有核心。
+const A9948_BUILD='B1.0 Alpha99.48';
+(()=>{
+  const A9948_TICK_REF=tick,A9948_ATTACK_REF=attack,A9948_CAST_REF=a11Cast,A9948_DROP_REF=rollDrop;
+  const P={
+    mobile:false,testMobile:null,force:false,low:false,lastSample:0,avgFrame:16.7,badScore:0,lowSince:0,
+    lastBattle:0,lastHud:0,lastLog:0,logTimer:0,logPending:false,
+    projectilePool:[],floatPool:[],
+    calls:{battleAttempt:0,battleRender:0,battleSkip:0,hudAttempt:0,hudRender:0,hudSkip:0,logAttempt:0,logRender:0,logSkip:0,projectile:0,float:0,lowEnter:0,lowExit:0}
+  };
+  function a9948MobileLike(){
+    if(P.testMobile!==null)return !!P.testMobile;
+    try{if(typeof a9909MobileLike==='function')return !!a9909MobileLike()}catch(e){}
+    try{if(typeof a977IsMobileLike==='function')return !!a977IsMobileLike()}catch(e){}
+    const ua=String(navigator?.userAgent||'');if(/Android|iPhone|iPad|iPod|Mobile/i.test(ua))return true;
+    try{return !!matchMedia?.('(pointer: coarse)')?.matches&&Math.min(Number(innerWidth||9999),Number(innerHeight||9999))<=1000}catch(e){return false}
+  }
+  function a9948Combat(){
+    if(!state)return false;
+    try{if(typeof a7IsVillage==='function'&&a7IsVillage())return false}catch(e){}
+    return !!(state.running||state?.boss?.fighting);
+  }
+  function a9948ApplyClasses(){
+    P.mobile=a9948MobileLike();
+    const root=document.documentElement;if(!root)return;
+    root.classList.toggle('a9948-mobile-perf',P.mobile);
+    root.classList.toggle('a9948-mobile-low',P.mobile&&P.low);
+  }
+  function a9948SetLow(on,now=performance.now()){
+    on=!!on;if(P.low===on)return;P.low=on;P.lowSince=now;
+    if(on)P.calls.lowEnter++;else P.calls.lowExit++;
+    a9948ApplyClasses();
+  }
+  function a9948Sample(now){
+    if(!P.mobile)return;
+    if(P.lastSample){
+      const d=now-P.lastSample;
+      if(d>0&&d<250){
+        P.avgFrame=P.avgFrame*.9+d*.1;
+        if(d>42)P.badScore=Math.min(30,P.badScore+Math.min(3,(d-30)/16));else P.badScore=Math.max(0,P.badScore-.22);
+        if(!P.low&&(P.badScore>=5||P.avgFrame>=31))a9948SetLow(true,now);
+        else if(P.low&&P.badScore<=.8&&P.avgFrame<23&&now-P.lowSince>5000)a9948SetLow(false,now);
+      }
+    }
+    P.lastSample=now;
+  }
+  function a9948BattleMs(){return P.low?45:30}
+  function a9948HudMs(){return P.low?150:75}
+  function a9948LogMs(){return P.low?700:350}
+
+  // 1) 手機戰鬥畫面最高 30 FPS；裝置持續掉幀時自動降到 20 FPS。
+  //    tick 仍照原本 requestAnimationFrame 執行，所以攻速/CD/掉落時間軸不跟著降 FPS。
+  const a9948BattleBase=renderBattleDynamic;
+  renderBattleDynamic=function(){
+    P.calls.battleAttempt++;
+    if(!P.mobile||!a9948Combat()||P.force){P.calls.battleRender++;return a9948BattleBase.apply(this,arguments)}
+    const now=performance.now();a9948Sample(now);
+    if(now-P.lastBattle<a9948BattleMs()){P.calls.battleSkip++;return}
+    P.lastBattle=now;P.calls.battleRender++;return a9948BattleBase.apply(this,arguments);
+  };
+
+  // 2) HUD 不再每一個 RAF 重畫；正常 12 FPS、降載模式 6 FPS。
+  const a9948HudBase=renderHUDDynamic;
+  renderHUDDynamic=function(){
+    P.calls.hudAttempt++;
+    if(!P.mobile||!a9948Combat()||P.force){P.calls.hudRender++;return a9948HudBase.apply(this,arguments)}
+    const now=performance.now();
+    if(now-P.lastHud<a9948HudMs()){P.calls.hudSkip++;return}
+    P.lastHud=now;P.calls.hudRender++;return a9948HudBase.apply(this,arguments);
+  };
+
+  // 3) 掛機日誌批次刷新：資料照樣逐筆記錄，手機畫面不再每筆都重建 80+45 行 DOM。
+  const a9948LogBase=renderLog;
+  function a9948FlushLog(){
+    P.logTimer=0;if(!P.logPending)return;P.logPending=false;
+    if(document.hidden)return;
+    P.lastLog=performance.now();P.calls.logRender++;
+    try{return a9948LogBase()}catch(e){try{console.error('Alpha99.48 log flush',e)}catch(_e){}}
+  }
+  renderLog=function(){
+    P.calls.logAttempt++;
+    if(!P.mobile||!a9948Combat()||P.force){P.calls.logRender++;return a9948LogBase.apply(this,arguments)}
+    const now=performance.now(),wait=a9948LogMs()-(now-P.lastLog);
+    if(wait<=0){P.lastLog=now;P.calls.logRender++;return a9948LogBase.apply(this,arguments)}
+    P.calls.logSkip++;P.logPending=true;
+    if(!P.logTimer&&!document.hidden)P.logTimer=setTimeout(a9948FlushLog,Math.max(16,wait));
+  };
+
+  // 4) 手機箭矢/三重矢改成固定 8 格物件池；不再每次建立 DOM，也不再每 55ms 建一個獨立換圖 interval。
+  const a9948ProjectileBase=a65Projectile;
+  function a9948ProjectilePool(layer){
+    if(!layer)return[];
+    if(P.projectilePool.some(o=>o.el?.parentElement!==layer))P.projectilePool=[];
+    while(P.projectilePool.length<8){
+      const el=document.createElement('img');el.className='a65-projectile a9948-projectile';el.style.display='none';el.setAttribute('aria-hidden','true');layer.appendChild(el);
+      P.projectilePool.push({el,until:0,token:0,timer:0});
+    }
+    return P.projectilePool;
+  }
+  a65Projectile=function(i,{triple=false,kind=null}={}){
+    if(!P.mobile||!a9948Combat())return a9948ProjectileBase.apply(this,arguments);
+    const layer=a65FxLayer();if(!layer)return;const pool=a9948ProjectilePool(layer),now=performance.now();
+    let slot=pool.find(o=>o.until<=now)||pool.reduce((a,b)=>a.until<=b.until?a:b);if(slot.timer)clearTimeout(slot.timer);
+    const el=slot.el,token=++slot.token;slot.until=now+340;P.calls.projectile++;
+    const from=a65PlayerPoint(),to=a65TargetPoint(i),dir=triple?'tripleshot/':('arrows/'+(kind||a65ArrowKind())+'/'),src=A44_NEW_AFEI_ROOT+'effects/'+dir+'0.png';
+    const dx=to.x-from.x,dy=to.y-from.y,angle=Math.atan2(dy,dx)*180/Math.PI;
+    el.className='a65-projectile a9948-projectile'+(triple?' triple':'');el.classList.remove('fly');el.style.display='block';el.style.left=from.x+'px';el.style.top=from.y+'px';
+    el.style.setProperty('--a65-dx',dx+'px');el.style.setProperty('--a65-dy',dy+'px');el.style.setProperty('--a65-angle',angle+'deg');
+    if(el.dataset.src!==src){el.dataset.src=src;el.src=src}
+    requestAnimationFrame(()=>{if(slot.token===token&&el.style.display!=='none')el.classList.add('fly')});
+    slot.timer=setTimeout(()=>{if(slot.token!==token)return;el.style.display='none';el.classList.remove('fly');slot.until=0;slot.timer=0},335);
+  };
+
+  // 5) 傷害數字改固定 12 格池；三重矢仍顯示三段傷害，但不會無限制 create/remove DOM。
+  const a9948FloatDamageBase=floatDamage,a9948FloatPlayerBase=floatPlayer;
+  function a9948FloatPool(battle){
+    if(!battle)return[];
+    if(P.floatPool.some(o=>o.el?.parentElement!==battle))P.floatPool=[];
+    while(P.floatPool.length<12){const el=document.createElement('div');el.className='a9948-float-slot';el.style.display='none';el.setAttribute('aria-hidden','true');battle.appendChild(el);P.floatPool.push({el,until:0,token:0,timer:0})}
+    return P.floatPool;
+  }
+  function a9948FloatAt(left,top,dmg,enemy,crit){
+    const battle=document.getElementById('battle');if(!battle)return;const pool=a9948FloatPool(battle),now=performance.now();let slot=pool.find(o=>o.until<=now)||pool.reduce((a,b)=>a.until<=b.until?a:b);
+    if(slot.timer)clearTimeout(slot.timer);const el=slot.el,token=++slot.token;slot.until=now+850;P.calls.float++;
+    el.className='a9948-float-slot';el.style.display='block';el.style.left=left+'px';el.style.top=top+'px';el.textContent='-'+dmg;
+    requestAnimationFrame(()=>{if(slot.token===token)el.className='a9948-float-slot float-dmg'+(enemy?' enemy':'')+(crit?' crit':'')});
+    slot.timer=setTimeout(()=>{if(slot.token!==token)return;el.style.display='none';el.className='a9948-float-slot';slot.until=0;slot.timer=0},840);
+  }
+  floatDamage=function(i,dmg,enemy=false,crit=false){
+    if(!P.mobile||!a9948Combat())return a9948FloatDamageBase.apply(this,arguments);
+    const battle=document.getElementById('battle'),slot=document.querySelector('.mslot[data-i="'+Number(i||0)+'"]');if(!battle||!slot)return;
+    const b=battle.getBoundingClientRect(),r=slot.getBoundingClientRect();a9948FloatAt(r.left-b.left+r.width/2+(Math.random()-.5)*18,r.top-b.top+r.height*.32,dmg,enemy,crit);
+  };
+  floatPlayer=function(dmg){
+    if(!P.mobile||!a9948Combat())return a9948FloatPlayerBase.apply(this,arguments);
+    const battle=document.getElementById('battle'),pl=document.getElementById('player-side');if(!battle||!pl)return;
+    const b=battle.getBoundingClientRect(),r=pl.getBoundingClientRect();a9948FloatAt(r.left-b.left+r.width/2,r.top-b.top+r.height*.3,dmg,true,false);
+  };
+
+  // 完整 render（換圖、進村、開角色、登入）必須立即刷新，不受 FPS 節流影響。
+  const a9948RenderBase=render;
+  render=function(){const old=P.force;P.force=true;try{return a9948RenderBase.apply(this,arguments)}finally{P.force=old;a9948ApplyVersion()}};
+
+  function a9948InstallStyle(){
+    if(document.getElementById('a9948-style'))return;
+    const st=document.createElement('style');st.id='a9948-style';st.textContent=`
+html.a9948-mobile-perf #battle{contain:paint}
+html.a9948-mobile-perf #battle .mob-img{filter:none!important}
+html.a9948-mobile-perf #battle .mslot.target .mob-img{filter:none!important}
+html.a9948-mobile-perf #battle .mob-img.hurt{filter:brightness(1.35)!important}
+html.a9948-mobile-perf #a981-followers .a981-follower{filter:none!important}
+html.a9948-mobile-perf #a981-followers .a981-follower.hunting img{animation-duration:1.35s!important}
+html.a9948-mobile-perf #battle .a65-projectile{filter:none!important;transition:transform .28s linear!important;will-change:transform}
+html.a9948-mobile-perf #battle .mob-hp i{transition:width .10s linear!important}
+html.a9948-mobile-low #a981-followers .a981-follower.hunting img{animation:none!important}
+html.a9948-mobile-low #battle .a988-death-fx{display:none!important}
+html.a9948-mobile-low #battle .a65-burst{box-shadow:none!important}
+html.a9948-mobile-low #battle .a65-aoe{filter:none!important}
+.a9948-float-slot{position:absolute;z-index:50;pointer-events:none}
+`;
+    document.head.appendChild(st);
+  }
+  function a9948ApplyVersion(){
+    a9948ApplyClasses();
+    try{document.title=A41_BRAND+' · '+A9948_BUILD}catch(e){document.title='樓梯口天堂 · '+A9948_BUILD}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9948_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.48｜手機前景戰鬥效能核心重構｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9948_BUILD+' · 手機戰鬥效能核心'}catch(e){}
+    try{window.__BUILD_VERSION__=A9948_BUILD;if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.mobilePerfCore='alpha99.48'}}catch(e){}
+  }
+  function a9948ResetCounters(){for(const k of Object.keys(P.calls))P.calls[k]=0;P.lastBattle=P.lastHud=P.lastLog=P.lastSample=0;P.avgFrame=16.7;P.badScore=0;return{...P.calls}}
+  function a9948Audit(){
+    const issues=[];
+    if(tick!==A9948_TICK_REF)issues.push('Alpha99.48 不應改寫 tick');
+    if(attack!==A9948_ATTACK_REF)issues.push('Alpha99.48 不應改寫 attack');
+    if(a11Cast!==A9948_CAST_REF)issues.push('Alpha99.48 不應改寫 a11Cast');
+    if(rollDrop!==A9948_DROP_REF)issues.push('Alpha99.48 不應改寫 rollDrop');
+    if(!document.getElementById('a9948-style'))issues.push('手機效能 CSS 未安裝');
+    return{ok:issues.length===0,build:A9948_BUILD,issues,mobile:P.mobile,low:P.low,targets:{battleFps:P.low?20:30,hudFps:P.low?6:12,logMs:a9948LogMs()},poolCaps:{projectile:8,float:12},logicUntouched:issues.length===0};
+  }
+  function a9948Probe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null,logs=logLines.slice(),oldTest=P.testMobile,oldForce=P.force,oldRand=Math.random,rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      P.testMobile=true;a9948ApplyClasses();a9948ResetCounters();P.force=false;
+      a76TestReset('elf',80);state.inVillage=false;state.mapId='training';state.running=true;state.learnedSkills=['sk_elf_triple'];state.equipment.wpn='wpn_3';state.inventory.wpn_22=50;state.equipment.arrow='wpn_22';state.player.mp=state.player.maxMp;state.skillCooldown={};derive();spawnAll();state.mobs[0].hp=state.mobs[0].maxHp=99999;state.target=0;
+      P.force=true;render();P.force=false;
+      for(let n=0;n<120;n++){renderBattleDynamic();renderHUDDynamic()}
+      add('手機動態重畫節流生效',P.calls.battleRender<P.calls.battleAttempt&&P.calls.hudRender<P.calls.hudAttempt,{calls:{...P.calls}});
+      for(let n=0;n<40;n++)a65Projectile(0,{triple:n%2===0});
+      add('箭矢/三重矢固定8格物件池',document.querySelectorAll('#a65-fx-layer .a9948-projectile').length<=8,{count:document.querySelectorAll('#a65-fx-layer .a9948-projectile').length});
+      for(let n=0;n<80;n++)floatDamage(0,10+n,false,n%9===0);
+      add('傷害數字固定12格物件池',document.querySelectorAll('#battle .a9948-float-slot').length<=12,{count:document.querySelectorAll('#battle .a9948-float-slot').length});
+      Math.random=()=>.999999;const hp=state.mobs[0].hp,mp=state.player.mp,ar=a8Count('wpn_22'),cast=a11Cast('sk_elf_triple');
+      add('三重矢仍為三段實傷/15MP/3箭',cast&&hp-state.mobs[0].hp>0&&mp-state.player.mp===15&&ar-a8Count('wpn_22')===3,{damage:hp-state.mobs[0].hp,mp:mp-state.player.mp,arrows:ar-a8Count('wpn_22')});
+      a9948ResetCounters();for(let n=0;n<25;n++)log('Alpha99.48 mobile log batch '+n,'gain');
+      add('手機掛機日誌批次重畫',P.calls.logRender<10&&logLines.length>=25,{calls:{...P.calls},logs:logLines.length});
+      add('戰鬥核心函式未改寫',a9948Audit().ok,a9948Audit());
+      add('Alpha99.47夢幻掉落同源保留',window.__A9947_TEST__?.audit?.().ok===true,window.__A9947_TEST__?.audit?.());
+      add('Alpha99.45夢幻純物理保留',window.__A9945_TEST__?.audit?.().ok===true,window.__A9945_TEST__?.audit?.());
+      add('Alpha99.44夢幻17隻一般化保留',window.__A9944_TEST__?.audit?.().ok===true,window.__A9944_TEST__?.audit?.());
+    }catch(e){add('Alpha99.48 probe exception',false,{error:String(e?.stack||e)})}
+    finally{
+      Math.random=oldRand;logLines=logs;if(P.logTimer){clearTimeout(P.logTimer);P.logTimer=0}P.logPending=false;P.testMobile=oldTest;P.force=oldForce;
+      try{if(snap){state=snap;derive();P.force=true;render();P.force=oldForce}else state=null}catch(e){}a9948ApplyVersion();
+    }
+    return{ok:rows.every(x=>x.ok),build:A9948_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,failed:rows.filter(x=>!x.ok).length,rows};
+  }
+  function a9948Stats(){return{build:A9948_BUILD,mobile:P.mobile,low:P.low,avgFrame:P.avgFrame,badScore:P.badScore,calls:{...P.calls},projectilePool:P.projectilePool.length,floatPool:P.floatPool.length,targets:{battleFps:P.low?20:30,hudFps:P.low?6:12,logMs:a9948LogMs()}}}
+
+  a9948InstallStyle();a9948ApplyVersion();
+  window.addEventListener('resize',()=>a9948ApplyClasses(),{passive:true});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){P.lastBattle=P.lastHud=P.lastSample=0;a9948ApplyClasses()}},{passive:true});
+  if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);a9948ApplyVersion();return r}};
+  if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);a9948ApplyVersion();return r}};
+  if(typeof a46OpenCreate==='function'){const b=a46OpenCreate;a46OpenCreate=function(){const r=b.apply(this,arguments);a9948ApplyVersion();return r}};
+  window.__A9948_TEST__={build:A9948_BUILD,audit:a9948Audit,probe:a9948Probe,stats:a9948Stats,reset:a9948ResetCounters,setTestMobile:(v)=>{P.testMobile=v==null?null:!!v;a9948ApplyClasses();return a9948Stats()},sampleMs:(ms)=>{const n=performance.now();P.lastSample=n-Number(ms||0);a9948Sample(n);return a9948Stats()},forceRender:()=>{const old=P.force;P.force=true;try{renderBattleDynamic();renderHUDDynamic();renderLog()}finally{P.force=old}return a9948Stats()},startTestHunt:()=>{P.testMobile=true;a9948ApplyClasses();a76TestReset('elf',80);state.inVillage=false;state.mapId='training';state.running=true;state.learnedSkills=['sk_elf_triple'];state.equipment.wpn='wpn_3';state.inventory.wpn_22=9999;state.equipment.arrow='wpn_22';state.player.mp=state.player.maxMp;state.skillCooldown={};derive();spawnAll();P.force=true;try{render()}finally{P.force=false}a9948ResetCounters();return a9948Stats()},previous:window.__A9947_TEST__};
+})();
+
+
 
 })();
 </script>
