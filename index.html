@@ -37421,6 +37421,96 @@ const A9960_BUILD='B1.0 Alpha99.60';
 })();
 
 
+// =====================================================================
+// B1.0 Alpha99.61 — 雜貨商新增銀礦石 / 二～四級黑魔石，購買價 1 金幣
+// - 只擴充原本已有商品表、可正常營運的「雜貨商人」。
+// - 不解鎖原本來源鎖定 NPC；不改素材原始 p、掉落、製作或販售規則。
+// =====================================================================
+const A9961_BUILD='B1.0 Alpha99.61';
+(()=>{
+  const MATERIALS=Object.freeze(['mat_silverore','mat_blackstone2','mat_blackstone3','mat_blackstone4']);
+  const MATERIAL_SET=new Set(MATERIALS);
+
+  const shopBase=a7ShopList;
+  a7ShopList=function(npc){
+    const base=shopBase.apply(this,arguments)||[];
+    if(!npc||String(npc.title||'')!=='雜貨商人'||!base.length)return base;
+    const out=[...base];
+    for(const id of MATERIALS)if(DATA.items?.[id]&&!out.includes(id))out.push(id);
+    return out;
+  };
+
+  const bundleBase=a7Bundle;
+  a7Bundle=function(id){
+    if(MATERIAL_SET.has(String(id||'')))return{cnt:1,cost:1};
+    return bundleBase.apply(this,arguments);
+  };
+
+  function a9961Audit(){
+    const issues=[],shops=[],items=[];
+    for(const id of MATERIALS){
+      const d=DATA.items?.[id],b=a7Bundle(id);
+      items.push({id,name:d?.n||'',exists:!!d,cost:Number(b?.cost),cnt:Number(b?.cnt),p:Number(d?.p||0),tradable:d?.tradable});
+      if(!d)issues.push('缺少道具 '+id);
+      if(Number(b?.cost)!==1||Number(b?.cnt)!==1)issues.push(id+' 雜貨商購買價不是 1 金幣');
+    }
+    for(const [townId,town] of Object.entries(DATA.towns||{}))for(const npc of(town?.npcs||[])){
+      if(String(npc?.title||'')!=='雜貨商人')continue;
+      const before=shopBase(npc)||[],after=a7ShopList(npc)||[],active=before.length>0,hasAll=MATERIALS.every(id=>after.includes(id));
+      shops.push({townId,npcId:npc.id,name:npc.n,active,beforeCount:before.length,afterCount:after.length,hasAll});
+      if(active&&!hasAll)issues.push(townId+'/'+npc.id+' 缺少四素材');
+      if(!active&&after.length!==0)issues.push(townId+'/'+npc.id+' 原本鎖定卻被解鎖');
+    }
+    return{ok:issues.length===0,build:A9961_BUILD,issues,items,shops};
+  }
+
+  function a9961PurchaseProbe(){
+    if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null;
+    const snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const rows=[];let error='';
+    try{
+      a76TestReset('knight',60);state.player.gold=100;
+      for(const id of MATERIALS){
+        const g0=state.player.gold,c0=a8Count(id),ok=a10Buy(id,1);
+        rows.push({id,name:DATA.items?.[id]?.n||id,ok,goldDelta:g0-state.player.gold,itemDelta:a8Count(id)-c0,cost:a7Bundle(id)?.cost});
+      }
+      return{ok:rows.every(x=>x.ok&&x.goldDelta===1&&x.itemDelta===1&&x.cost===1),build:A9961_BUILD,rows,error};
+    }catch(e){error=String(e?.stack||e);return{ok:false,build:A9961_BUILD,rows,error}}
+    finally{
+      try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}
+    }
+  }
+
+  function a9961ShopUiProbe(){
+    if(typeof a76TestReset!=='function')return{ok:false,skipped:true,reason:'a76TestReset unavailable'};
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null;
+    const snap=state?JSON.parse(JSON.stringify(state)):null,active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,mapSnap=typeof mapTab!=='undefined'?mapTab:null;
+    const out={ok:false,build:A9961_BUILD,error:''};
+    try{
+      a76TestReset('knight',60);state.player.gold=100;
+      let townId='',npc=null;outer:for(const [tid,t] of Object.entries(DATA.towns||{}))for(const n of(t.npcs||[])){if(String(n?.title||'')==='雜貨商人'&&(shopBase(n)||[]).length){townId=tid;npc=n;break outer}}
+      if(!npc)throw new Error('找不到可營運雜貨商人');
+      state.inVillage=true;state.mapId=townId;state._a7NpcId=npc.id;state.running=false;
+      a7RenderVillage();a72DispatchNpc(townId,npc);if(typeof a972ShowNpcAction==='function')a972ShowNpcAction();if(typeof a9846DecorateNpc==='function')a9846DecorateNpc();
+      const box=document.getElementById('village-action'),sc=box?.querySelector(':scope > .a9846-npc-scroll')||box,text=String(sc?.textContent||'').replace(/\s+/g,' '),list=a7ShopList(npc)||[];
+      out.townId=townId;out.npcId=npc.id;out.hasAll=MATERIALS.every(id=>list.includes(id));
+      out.names=['銀礦石','二級黑魔石','三級黑魔石','四級黑魔石'].every(n=>text.includes(n));
+      out.rows={};for(const id of MATERIALS){const btn=box?.querySelector('[data-a10-buy=\"'+id+'\"]');const row=btn?.closest('.a7-shop-row');out.rows[id]=String(row?.textContent||'').replace(/\s+/g,' ').trim()}
+      out.oneGold=MATERIALS.every(id=>out.rows[id].includes('1 金幣'));
+      out.overflow=!!box&&(box.scrollWidth>box.clientWidth+3);
+      out.ok=out.hasAll&&out.names&&out.oneGold&&!out.overflow;
+      return out;
+    }catch(e){out.error=String(e?.stack||e);return out}
+    finally{
+      try{if(storage)a76StorageRestore(storage);if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending;if(typeof mapTab!=='undefined'&&mapSnap!=null)mapTab=mapSnap;if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}
+    }
+  }
+
+  window.__A9961_TEST__={build:A9961_BUILD,ids:[...MATERIALS],audit:a9961Audit,purchaseProbe:a9961PurchaseProbe,shopUiProbe:a9961ShopUiProbe,previous:window.__A9960_TEST__||null};
+})();
+
+
 
 })();
 </script>
@@ -37797,4 +37887,26 @@ const A9960_BUILD='B1.0 Alpha99.60';
   window.__A9960_VERSION__={build:B,applyVersion:apply};
 })();
 </script>
+
+
+<script id="a9961-final-version">
+(()=>{
+  const B='B1.0 Alpha99.61';
+  function apply(){
+    window.__BUILD_VERSION__=B;
+    try{document.title='樓梯口天堂 · '+B}catch(e){}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}
+    try{const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.61：銀礦石、二級黑魔石、三級黑魔石、四級黑魔石加入既有雜貨商人，購買價皆為 1 金幣。'}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.61｜雜貨商四素材 1 金幣｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 雜貨商四素材1金幣'}catch(e){}
+  }
+  apply();setTimeout(apply,0);window.addEventListener('pageshow',apply,{passive:true});
+  try{
+    if(typeof render==='function'){const b=render;render=function(){const r=b.apply(this,arguments);apply();return r}}
+    if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);apply();return r}}
+    if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);apply();return r}}
+  }catch(e){}
+})();
+</script>
+
 </body></html>
