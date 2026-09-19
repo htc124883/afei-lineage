@@ -1959,7 +1959,7 @@ function a16EnsureModal(){let m=document.getElementById('a16-enhance-modal');if(
 function a16OpenEnhance(scrollId){a16EnsureEnhanceState();const s=A16_SCROLLS[scrollId];if(!s||a8Count(scrollId)<1){toast('強化卷軸不足');return false}const slots=a16EligibleSlots(scrollId),m=a16EnsureModal();m.dataset.scroll=scrollId;m.querySelector('#a16-enh-title').textContent=a16ScrollName(scrollId);m.querySelector('#a16-enh-note').textContent=s.cursed?'詛咒卷軸會 100% 降低 1 階，不會爆裝。':'安定值以前必定成功；超過安定值失敗時裝備會消失。祝福卷軸成功時隨機 +1～+3。';const list=m.querySelector('#a16-enh-list');list.innerHTML=slots.length?slots.map(slot=>{const id=state.equipment[slot],d=a8Item(id),en=a16EqEn(slot),sum=a10MetaSummary?a10MetaSummary(slot,id,state.equipAffix?.[slot]):'';return'<button class="a16-enh-row" data-a16-slot="'+escapeHtml(slot)+'"><span><b>'+escapeHtml(A8_SLOT_NAMES[slot]||slot)+'：'+escapeHtml(a16GearName(id,en,state.equipAffix?.[slot]))+'</b><small>安定 +'+Number(d.safe||0)+' · 上限 +'+a16CapFor(d)+(sum?' · '+escapeHtml(sum):'')+'</small></span><em>'+escapeHtml(a16RiskText(scrollId,slot))+'</em></button>'}).join(''):'<div class="a16-enh-empty">目前身上沒有可使用這張卷軸的裝備。</div>';list.querySelectorAll('[data-a16-slot]').forEach(b=>b.onclick=()=>a16EnhanceSlot(scrollId,b.dataset.a16Slot));m.classList.add('open');return true}
 function a16DestroySlot(slot,id,en){delete state.equipment[slot];delete state.equipEnhance[slot];if(state.equipAffix)delete state.equipAffix[slot];log(a16GearName(id,en)+' 強烈發出銀色光芒後消失了。','bad')}
 function a16EnhanceSlot(scrollId,slot){a16EnsureEnhanceState();const s=A16_SCROLLS[scrollId],id=state.equipment?.[slot],d=a8Item(id);if(!s||!id||!d||d.type!==s.type||a8Count(scrollId)<1)return false;let en=a16EqEn(slot),cap=a16CapFor(d);if(s.cursed){if(en<=0){toast('已經是 +0');return false}if(!a8Take(scrollId,1))return false;en--;if(en>0)state.equipEnhance[slot]=en;else delete state.equipEnhance[slot];log('使用 '+a16ScrollName(scrollId)+'，'+a16GearName(id,en,state.equipAffix?.[slot])+' 散發出黯淡光芒。','gain');derive();save();render();document.getElementById('a16-enhance-modal')?.classList.remove('open');return true}
- if(en>=cap){toast('已達強化上限 +'+cap);return false}const rate=a16Rate(d,en);if(rate<1&&!confirm('目前 '+a16GearName(id,en,state.equipAffix?.[slot])+' 強化成功率約 '+Math.round(rate*100)+'%。\n失敗時裝備會消失。確定使用卷軸？'))return false;if(!a8Take(scrollId,1))return false;const ok=Math.random()<rate;if(ok){const add=s.blessed?(1+Math.floor(Math.random()*3)):1,en2=Math.min(cap,en+add);state.equipEnhance[slot]=en2;log(a16GearName(id,en2,state.equipAffix?.[slot])+' 發出銀色光芒，強化成功'+(s.blessed&&add>1?'（+'+add+'）':'')+'。','gain')}else a16DestroySlot(slot,id,en);derive();save();render();document.getElementById('a16-enhance-modal')?.classList.remove('open');return ok}
+ if(en>=cap){toast('已達強化上限 +'+cap);return false}const rate=a16Rate(d,en);if(!a8Take(scrollId,1))return false;const ok=Math.random()<rate;if(ok){const add=s.blessed?(1+Math.floor(Math.random()*3)):1,en2=Math.min(cap,en+add);state.equipEnhance[slot]=en2;log(a16GearName(id,en2,state.equipAffix?.[slot])+' 發出銀色光芒，強化成功'+(s.blessed&&add>1?'（+'+add+'）':'')+'。','gain')}else a16DestroySlot(slot,id,en);derive();save();render();document.getElementById('a16-enhance-modal')?.classList.remove('open');return ok}
 
 // Alpha 16 gear metadata is unified so enhancement and affixes stay on the same physical copy.
 const _a16RawTake=a8Take;
@@ -3092,10 +3092,7 @@ a16EnhanceSlot=function(scrollId,slot){
   if(en>=cap){toast('已達強化上限 +'+cap);return false}
   const p=a23EnhanceProfile(d,en,scrollId);
   if(p.blocked){toast(p.reason);return false}
-  if(!p.safe){
-    const msg='新阿肥現行機率：成功 '+a23Pct(p.succ)+'%／維持 '+a23Pct(p.stay)+'%／破壞 '+a23Pct(p.destroy)+'%。\n確定使用 '+a16ScrollName(scrollId)+'？';
-    if(!confirm(msg))return false;
-  }
+  // Alpha99.59：所有強化操作取消二次確認，按下後直接執行。
   if(!a8Take(scrollId,1))return false;
   const before=en,roll=Math.random()*100;
   if(roll<Number(p.succ||0)){
@@ -15828,6 +15825,23 @@ function a972SafeEnhance(slot){
   if(!changed)toast(a8Count(scroll)<1?'強化卷軸不足':'目前已達安定值');
   return changed;
 }
+function a9959EnhanceEquippedTo9(slot){
+  const id=state.equipment?.[slot],d=a8Item(id);if(!id||!d){toast('請先裝備');return false}
+  const scroll=d.type==='wpn'?'scroll_weapon':d.type==='arm'?'scroll_armor':d.type==='acc'?'scroll_acc':'';
+  if(!scroll){toast('這類裝備沒有一般強化卷規則');return false}
+  const cap=a16CapFor(d);if(cap<9){toast('此裝備強化上限只有 +'+cap+'，無法強化至 +9');return false}
+  if(a16EqEn(slot)>=9){toast('目前已達 +9');return false}
+  let changed=false,guard=5000;
+  while(guard-->0){
+    if(state.equipment?.[slot]!==id)break;
+    if(a16EqEn(slot)>=9)break;
+    if(a8Count(scroll)<1){toast('強化卷軸不足');break}
+    const ok=a16EnhanceSlot(scroll,slot);if(!ok)break;changed=true;
+    if(state.equipment?.[slot]!==id)break;
+  }
+  if(guard<=0&&state.equipment?.[slot]===id&&a16EqEn(slot)<9)toast('強化次數異常，已停止');
+  return changed;
+}
 function a972DetailHtml(id,slotCtx=''){
   const d=a8Item(id)||DATA.items?.[id];if(!d)return'<div class="a972-empty">找不到物品資料。</div>';
   let meta=a68InventoryMeta(id);if(slotCtx&&state.equipment?.[slotCtx]===id)meta=a68EquippedMeta(slotCtx);
@@ -15838,7 +15852,7 @@ function a972DetailHtml(id,slotCtx=''){
   else if(count>0&&gear&&!d.noEquip)action+='<button class="a972-detail-act gold" data-a972-equip="'+escapeHtml(id)+'">裝備</button>';
   else if(count>0&&!d.noUse&&(d.type==='pot'||d.type==='scroll'||d.type==='skillbk'||d.eff))action+='<button class="a972-detail-act gold" data-a972-use="'+escapeHtml(id)+'">使用</button>';
   if(gear)action+='<button class="a972-detail-act compare" data-a972-compare>⚖ 與身上比較</button>';
-  if(gear&&equippedSlot)action+='<button class="a972-detail-act enhance" data-a972-enhance="'+escapeHtml(equippedSlot)+'">強化</button><button class="a972-detail-act safe" data-a972-safe="'+escapeHtml(equippedSlot)+'">一鍵強化安定（→ +'+Number(d.safe||0)+'）</button>';
+  if(gear&&equippedSlot){action+='<button class="a972-detail-act enhance" data-a972-enhance="'+escapeHtml(equippedSlot)+'">強化</button><button class="a972-detail-act safe" data-a972-safe="'+escapeHtml(equippedSlot)+'">一鍵強化安定（→ +'+Number(d.safe||0)+'）</button>';if(Number(meta.en||0)<9)action+='<button class="a972-detail-act enhance a9959-to9" data-a972-to9="'+escapeHtml(equippedSlot)+'">一鍵強化至 +9</button>'}
   if(unit>0&&plain>0&&!locked)action+='<button class="a972-detail-act sell" data-a972-sell-one>出售 💰'+fmt(unit)+'</button><button class="a972-detail-act sell" data-a972-sell-all>全部出售 💰'+fmt(unit*plain)+'</button>';
   return '<div class="a972-detail-card"><button class="a972-lock-btn '+(locked?'locked':'')+'" data-a972-lock="'+escapeHtml(id)+'">'+(locked?'🔒':'🔓')+'</button>'+
     '<div class="a972-detail-icon">'+a67ItemIconHtml(id,'detail')+'</div><h2>'+escapeHtml(name)+' <small>('+fmt(count)+')</small></h2>'+
@@ -15860,6 +15874,7 @@ a68OpenItem=function(id,slotCtx=''){
     body.querySelectorAll('[data-a972-compare]').forEach(b=>b.onclick=()=>{const h=body.querySelector('.a972-compare-holder');h.innerHTML=a68CompareHtml(id,m.dataset.slot||'');b.disabled=true});
     body.querySelectorAll('[data-a972-enhance]').forEach(b=>b.onclick=()=>{const slot=b.dataset.a972Enhance,scroll=a972EnhanceScrollFor(id);if(!scroll){toast('背包沒有可用的一般強化卷軸');return}m.classList.remove('open');a16OpenEnhance(scroll)});
     body.querySelectorAll('[data-a972-safe]').forEach(b=>b.onclick=()=>{a972SafeEnhance(b.dataset.a972Safe);rerender()});
+    body.querySelectorAll('[data-a972-to9]').forEach(b=>b.onclick=()=>{const slot=b.dataset.a972To9;a9959EnhanceEquippedTo9(slot);if(state.equipment?.[slot]===id)rerender();else m.classList.remove('open')});
     body.querySelectorAll('[data-a972-sell-one]').forEach(b=>b.onclick=()=>{a972SafeSellQty(id,false);if(a8Count(id)>0)rerender();else m.classList.remove('open')});
     body.querySelectorAll('[data-a972-sell-all]').forEach(b=>b.onclick=()=>{a972SafeSellQty(id,true);if(a8Count(id)>0)rerender();else m.classList.remove('open')});
     body.querySelectorAll('[data-a972-detail-close]').forEach(b=>b.onclick=()=>m.classList.remove('open'));
@@ -31178,7 +31193,7 @@ const A9913_BUILD='B1.0 Alpha99.13';
     }
     if(en>=cap){toast('已達強化上限 +'+cap);return false}
     const p=a23EnhanceProfile(d,en,scrollId);if(p.blocked){toast(p.reason);return false}
-    if(!p.safe&&opts.confirmUnsafe!==false){const msg='新阿肥現行機率：成功 '+a23Pct(p.succ)+'%／維持 '+a23Pct(p.stay)+'%／破壞 '+a23Pct(p.destroy)+'%。\n確定強化背包中的 '+a16GearName(id,en,t.meta.affix||{})+'？';if(!confirm(msg))return false}
+    // Alpha99.59：背包強化也不再跳成功／維持／破壞率確認視窗。
     if(!a8Take(scrollId,1))return false;
     const before=en,roll=Math.random()*100;
     if(roll<Number(p.succ||0)){
@@ -33222,7 +33237,7 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
     let action='';
     if(gear)action+='<button class="a972-detail-act gold" data-a9931-equip>裝備</button><button class="a972-detail-act compare" data-a9931-compare>⚖ 與身上比較</button>';
     else if(!d.noUse&&(d.type==='pot'||d.type==='scroll'||d.type==='skillbk'||d.eff))action+='<button class="a972-detail-act gold" data-a9931-use>使用</button>';
-    if(gear&&!d.noEnh){action+='<button class="a972-detail-act enhance" data-a9931-enhance>強化（這一組）</button>';if(Number(meta.en||0)<Number(d.safe||0))action+='<button class="a972-detail-act safe" data-a9931-safe>一鍵強化安定（→ +'+Number(d.safe||0)+'）</button>'}
+    if(gear&&!d.noEnh){action+='<button class="a972-detail-act enhance" data-a9931-enhance>強化（這一組）</button>';if(Number(meta.en||0)<Number(d.safe||0))action+='<button class="a972-detail-act safe" data-a9931-safe>一鍵強化安定（→ +'+Number(d.safe||0)+'）</button>';if(Number(meta.en||0)<9)action+='<button class="a972-detail-act enhance a9959-to9" data-a9931-to9>一鍵強化至 +9</button>'}
     if(v.kind==='plain'&&unit>0&&!locked){action+='<button class="a972-detail-act sell" data-a9931-sell-one>出售 💰'+fmt(unit)+'</button><button class="a972-detail-act sell" data-a9931-sell-all>全部出售 💰'+fmt(unit*count)+'</button>'}
     const seteff=meta.seteff?'<div class="a972-detail-affix">✦ '+escapeHtml(meta.seteff)+'</div>':'';
     return '<div class="a972-detail-card"><button class="a972-lock-btn '+(locked?'locked':'')+'" data-a9931-lock>'+(locked?'🔒':'🔓')+'</button>'+ '<div class="a972-detail-icon">'+a9931IconHtml(id,meta,'detail')+'</div><h2>'+escapeHtml(name)+' <small>('+fmt(count)+')</small></h2>'+ '<div class="a972-detail-info">'+info.map(([k,val])=>'<div><span>'+escapeHtml(k)+'：</span><b>'+escapeHtml(val)+'</b></div>').join('')+'</div>'+ (aff?'<div class="a972-detail-affix">'+escapeHtml(aff)+'</div>':'')+seteff+ '<div class="a972-detail-actions">'+action+'<button class="a972-detail-act close" data-a9931-close>關閉</button></div><div class="a972-compare-holder"></div></div>';
@@ -33232,9 +33247,41 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
     const d=a8Item(v.id),scroll=a972EnhanceScrollFor(v.id);if(!d||!scroll){toast('背包沒有可用的一般強化卷軸');return false}if(a972IsLocked(v.id)){toast('此裝備已鎖定，請先解鎖再強化。');return false}
     let cur={...v,meta:a9931Meta(v.id,v.meta)},changed=false,guard=safe?30:1;
     while(guard-->0){const en=Number(cur.meta.en||0),goal=Math.max(0,Number(d.safe||0));if(safe&&en>=goal)break;const target=a9931Target(cur);if(!target){toast('找不到這一組裝備');break}
-      const r=window.__A9913_TEST__?.enhanceInventory?.(scroll,v.id,target,{closeModal:false,confirmUnsafe:!safe});if(!r)break;changed=true;if(r.result==='destroy')break;if(r.to!=null){cur.kind='special';cur.meta={...cur.meta,en:Number(r.to)};cur.sig=a9931Sig(cur.id,cur.meta)}if(!safe)break;
+      const r=window.__A9913_TEST__?.enhanceInventory?.(scroll,v.id,target,{closeModal:false,confirmUnsafe:false});if(!r)break;changed=true;if(r.result==='destroy')break;if(r.to!=null){cur.kind='special';cur.meta={...cur.meta,en:Number(r.to)};cur.sig=a9931Sig(cur.id,cur.meta)}if(!safe)break;
     }
     if(!changed&&safe)toast(a8Count(scroll)<1?'強化卷軸不足':'目前已達安定值');document.getElementById('a68-item-modal')?.classList.remove('open');try{renderDrawers()}catch(e){render()}return changed;
+  }
+  function a9959EnhanceVariantTo9(v){
+    const d=a8Item(v.id),scroll=a972EnhanceScrollFor(v.id);if(!d||!scroll){toast('背包沒有可用的一般強化卷軸');return false}if(a972IsLocked(v.id)){toast('此裝備已鎖定，請先解鎖再強化。');return false}
+    const cap=a16CapFor(d);if(cap<9){toast('此裝備強化上限只有 +'+cap+'，無法強化至 +9');return false}
+    let cur={...v,meta:a9931Meta(v.id,v.meta)},changed=false,guard=5000;
+    if(Number(cur.meta.en||0)>=9){toast('目前已達 +9');return false}
+    while(guard-->0){
+      const en=Number(cur.meta.en||0);if(en>=9)break;if(a8Count(scroll)<1){toast('強化卷軸不足');break}
+      const target=a9931Target(cur);if(!target){toast('找不到這一組裝備');break}
+      const r=window.__A9913_TEST__?.enhanceInventory?.(scroll,v.id,target,{closeModal:false,confirmUnsafe:false});if(!r)break;changed=true;if(r.result==='destroy')break;
+      if(r.to!=null){cur.kind='special';cur.meta={...cur.meta,en:Number(r.to)};cur.sig=a9931Sig(cur.id,cur.meta)}
+    }
+    if(guard<=0&&Number(cur.meta.en||0)<9)toast('強化次數異常，已停止');
+    document.getElementById('a68-item-modal')?.classList.remove('open');try{renderDrawers()}catch(e){render()}return changed;
+  }
+  function a9959EnhanceProbe(){
+    const snap=state?JSON.parse(JSON.stringify(state)):null,rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    const oldRnd=Math.random,oldConfirm=window.confirm;let confirmCalls=0;
+    try{
+      window.confirm=()=>{confirmCalls++;return false};Math.random=()=>0;
+      a76TestReset('knight',1);state.inventory={wpn_1:1,scroll_weapon:20};state.gearInventoryMeta={};state.affixInventory={};state.enhanceInventory={};state.lockedItems={};a16EnsureEnhanceState();
+      const v=a9931BuildVariants().find(x=>x.id==='wpn_1'&&Number(x.meta?.en||0)===0);const s0=a8Count('scroll_weapon');const ok=a9959EnhanceVariantTo9(v);const after=a9931BuildVariants().find(x=>x.id==='wpn_1'&&Number(x.meta?.en||0)===9);
+      add('背包一鍵 +0→+9',ok&&!!after&&s0-a8Count('scroll_weapon')===9,{scrollUsed:s0-a8Count('scroll_weapon'),finalEn:after?Number(after.meta.en):null});
+      add('背包一鍵 +9 無確認視窗',confirmCalls===0,{confirmCalls});
+      a76TestReset('knight',1);state.inventory={scroll_weapon:20};state.equipment={wpn:'wpn_1'};state.equipEnhance={wpn:6};state.lockedItems={};derive();confirmCalls=0;const e0=a8Count('scroll_weapon'),eqOk=a9959EnhanceEquippedTo9('wpn');
+      add('裝備中一鍵 +6→+9',eqOk&&state.equipment?.wpn==='wpn_1'&&a16EqEn('wpn')===9&&e0-a8Count('scroll_weapon')===3,{scrollUsed:e0-a8Count('scroll_weapon'),finalEn:a16EqEn('wpn')});
+      add('裝備中一鍵 +9 無確認視窗',confirmCalls===0,{confirmCalls});
+      a76TestReset('knight',1);state.inventory={wpn_1:1,scroll_weapon:2};state.gearInventoryMeta={wpn_1:[{en:6,affix:{}}]};state.affixInventory={};state.enhanceInventory={};state.lockedItems={};a16EnsureEnhanceState();confirmCalls=0;const direct=window.__A9913_TEST__?.enhanceInventory?.('scroll_weapon','wpn_1',{kind:'meta',index:0},{closeModal:false,confirmUnsafe:true});
+      add('單次危險強化也直接執行',!!direct&&confirmCalls===0,{confirmCalls,result:direct?.result,to:direct?.to});
+    }catch(e){add('Alpha99.59 強化實測例外',false,{error:String(e?.stack||e)})}
+    finally{Math.random=oldRnd;window.confirm=oldConfirm;if(snap){state=snap;try{derive();render()}catch(e){}}}
+    return{ok:rows.every(x=>x.ok),build:'B1.0 Alpha99.59',total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
   }
   function a9931OpenVariant(token){
     const v=A9931_CACHE.get(String(token));if(!v)return false;if(v.kind==='normal'&&!a9931Gear(v.id))return a68OpenItem(v.id,'');
@@ -33245,6 +33292,7 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
     body.querySelector('[data-a9931-compare]')?.addEventListener('click',e=>{const h=body.querySelector('.a972-compare-holder');if(h)h.innerHTML=a9931CompareHtml(v);e.currentTarget.disabled=true});
     body.querySelector('[data-a9931-enhance]')?.addEventListener('click',()=>a9931EnhanceVariant(v,false));
     body.querySelector('[data-a9931-safe]')?.addEventListener('click',()=>a9931EnhanceVariant(v,true));
+    body.querySelector('[data-a9931-to9]')?.addEventListener('click',()=>a9959EnhanceVariantTo9(v));
     body.querySelector('[data-a9931-sell-one]')?.addEventListener('click',()=>{if(a10Sell(v.id,1)){m.classList.remove('open');renderDrawers()}});
     body.querySelector('[data-a9931-sell-all]')?.addEventListener('click',()=>{const q=Math.min(Number(v.count)||0,a16PlainCount(v.id));if(q>0&&a10Sell(v.id,q)){m.classList.remove('open');renderDrawers()}});
     body.querySelector('[data-a9931-close]')?.addEventListener('click',()=>m.classList.remove('open'));return true;
@@ -33303,7 +33351,7 @@ window.__A9924_TEST__={build:A9924_BUILD,audit:a9924Audit,probe:a9924Probe,ensur
     derive();a9931MountInventory();return true;
   }
   function a9931Snapshot(){return{equipment:{...(state?.equipment||{})},equipEnhance:{...(state?.equipEnhance||{})},variants:a9931BuildVariants().map(v=>({id:v.id,en:Number(v.meta?.en||0),count:Number(v.count||0),token:v.token})),build:A9931_BUILD}}
-  window.__A9931_TEST__={build:A9931_BUILD,probe:a9931Probe,variants:()=>a9931BuildVariants(),mount:a9931MountInventory,open:a9931OpenVariant,demo:a9931Demo,snapshot:a9931Snapshot,applyVersion:a9931ApplyVersion};
+  window.__A9931_TEST__={build:A9931_BUILD,probe:a9931Probe,variants:()=>a9931BuildVariants(),mount:a9931MountInventory,open:a9931OpenVariant,demo:a9931Demo,snapshot:a9931Snapshot,enhanceTo9:a9959EnhanceVariantTo9,probeTo9:a9959EnhanceProbe,applyVersion:a9931ApplyVersion};
   a9931ApplyVersion();
 })();
 
@@ -37463,5 +37511,38 @@ const A9954_BUILD='B1.0 Alpha99.54';
 
 <script id="a9958-final-version">
 (()=>{const B='B1.0 Alpha99.58';function a(){window.__BUILD_VERSION__=B;try{document.title='樓梯口天堂 · '+B}catch(e){}try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.58｜手機長時間離線秒結算實驗版｜PC＋手機'}catch(e){}try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 手機離線秒結算'}catch(e){}}a();setTimeout(a,0);window.addEventListener('pageshow',a,{passive:true})})();
+</script>
+
+<style id="a9959-enhance-style">
+.a972-detail-act.a9959-to9{border-color:#8c6c1a;background:#3a2d0c;color:#ffe48a;font-weight:800}
+</style>
+<script id="a9959-final-version">
+(()=>{
+  const B='B1.0 Alpha99.59';
+  function apply(){
+    window.__BUILD_VERSION__=B;
+    try{document.title='樓梯口天堂 · '+B}catch(e){}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.59｜一鍵強化至+9＋取消強化確認｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 一鍵強化至+9'}catch(e){}
+  }
+  function audit(){
+    const rows=[],add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      add('背包強化已移除 confirm',!String(window.__A9913_TEST__?.enhanceInventory||'').includes('confirm('));
+      add('背包 +9 執行器存在',typeof window.__A9931_TEST__?.enhanceTo9==='function');
+      add('版本標記',window.__BUILD_VERSION__===B,{build:window.__BUILD_VERSION__});
+      const p=window.__A9931_TEST__?.probeTo9?.();add('一鍵強化流程實測',p?.ok===true,{passed:p?.passed,total:p?.total,rows:p?.rows});
+    }catch(e){add('Alpha99.59 audit exception',false,{error:String(e?.stack||e)})}
+    return{ok:rows.every(x=>x.ok),build:B,total:rows.length,passed:rows.filter(x=>x.ok).length,rows};
+  }
+  apply();setTimeout(apply,0);window.addEventListener('pageshow',apply,{passive:true});
+  try{
+    if(typeof render==='function'){const b=render;render=function(){const r=b.apply(this,arguments);apply();return r}}
+    if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);apply();return r}}
+    if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);apply();return r}}
+  }catch(e){}
+  window.__A9959_TEST__={build:B,audit,applyVersion:apply,previous:window.__A9958_TEST__||null};
+})();
 </script>
 </body></html>
