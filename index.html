@@ -36960,6 +36960,188 @@ const A9954_BUILD='B1.0 Alpha99.54';
   window.__A9957_TEST__={build:A9957_BUILD,audit,probe,stress,hundred:a9957PandoraHundred,ten:a9957PandoraTen,applyVersion:a9957ApplyVersion,previous:window.__A9956_TEST__};
 })();
 
+// =====================================================================
+// B1.0 Alpha99.58 — 手機長時間離線「單次短樣本 + 數學批次」秒結算實驗版
+// 目的：手機重新開啟時，不再按離線時數逐隻 killMob / 反覆校準。
+// - 只對手機 + 一般狩獵 + >90秒離線啟用；PC / Boss / 試煉等特殊流程維持舊引擎。
+// - 最多只跑一段 30秒遊戲時間真實樣本；若 0 擊殺才延長至最多 90秒遊戲時間。
+// - 剩餘時數：擊殺/EXP/金幣/掉落/消耗品一次批次結算。
+// - 掉落：一般表保留「第一個成功即停止」，舊阿肥獨立判定表保留各列獨立判定；地區掉落獨立批次。
+// - 不逐殺寫日誌、不逐殺存檔；最後只走一次既有 a45FinishOffline()。
+// =====================================================================
+(()=>{
+  const A9958_BUILD='B1.0 Alpha99.58';
+  const EXACT_LIMIT=90*1000, SAMPLE_FIRST=30*1000, SAMPLE_MAX=90*1000;
+  const K={forceMobile:null,last:null,runs:0};
+  const BASE_PROCESS=a45ProcessOffline;
+
+  function mobile(){
+    if(K.forceMobile!==null)return !!K.forceMobile;
+    try{const x=window.__A9948_TEST__?.stats?.();if(x&&typeof x.mobile==='boolean')return !!x.mobile}catch(e){}
+    const ua=String(navigator?.userAgent||'');
+    if(/Android|iPhone|iPad|iPod|Mobile/i.test(ua))return true;
+    try{return !!matchMedia?.('(pointer: coarse)')?.matches&&Math.min(Number(innerWidth||9999),Number(innerHeight||9999))<=1000}catch(e){return false}
+  }
+  const clamp01=x=>Math.max(0,Math.min(1,Number(x)||0));
+  const stochastic=v=>{v=Math.max(0,Number(v)||0);const f=Math.floor(v),r=v-f;return f+(Math.random()<r?1:0)};
+  function normal01(){let u=0,v=0;while(u<=1e-12)u=Math.random();while(v<=1e-12)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+  function poisson(lambda){lambda=Math.max(0,Number(lambda)||0);if(lambda<=0)return 0;if(lambda>50)return Math.max(0,Math.round(lambda+Math.sqrt(lambda)*normal01()));let L=Math.exp(-lambda),p=1,k=0;do{k++;p*=Math.random()}while(p>L&&k<10000);return Math.max(0,k-1)}
+  function binom(n,p){
+    n=Math.max(0,Math.floor(Number(n)||0));p=clamp01(p);if(!n||!p)return 0;if(p>=1)return n;
+    if(n<=64){let x=0;for(let i=0;i<n;i++)if(Math.random()<p)x++;return x}
+    if(n*p<24)return Math.min(n,poisson(n*p));
+    if(n*(1-p)<24)return n-Math.min(n,poisson(n*(1-p)));
+    const mean=n*p,sd=Math.sqrt(n*p*(1-p));return Math.max(0,Math.min(n,Math.round(mean+sd*normal01())));
+  }
+  function distribute(n,ids){
+    n=Math.max(0,Math.floor(Number(n)||0));ids=Array.isArray(ids)?ids.filter(Boolean):[];const out={};if(!n||!ids.length)return out;
+    let rem=n,left=ids.length;for(let i=0;i<ids.length;i++){const id=ids[i];let c=i===ids.length-1?rem:binom(rem,1/left);out[id]=(out[id]||0)+c;rem-=c;left--}return out;
+  }
+  function addCount(map,id,n){n=Math.max(0,Math.floor(Number(n)||0));if(id&&n)map[id]=(map[id]||0)+n}
+  function validDrop(id){if(!id||!DATA.items?.[id])return false;try{if(typeof A42_LIVE_ABSENT_OLD_IDS!=='undefined'&&A42_LIVE_ABSENT_OLD_IDS.has(id))return false}catch(e){}return true}
+  function dropKey(mid,m){try{if(typeof a80DropKey==='function')return String(a80DropKey(m,String(state?.mapId||''))||m?.n||'')}catch(e){}return String(m?.n||'')}
+  function independent(mid,m){if(String(m?.n||'')==='邪惡思克巴')return true;try{return window.__A9878_TEST__?.status?.(mid)?.kind==='old-afei-fallback'}catch(e){return false}}
+  function batchMobDrops(totalKills){
+    const got={},pool=(typeof mobPool==='function'?mobPool():[]).filter(id=>DATA.mobs?.[id]&&!DATA.mobs[id].boss),per=distribute(totalKills,pool);
+    for(const [mid,kills0] of Object.entries(per)){
+      const kills=Math.max(0,Math.floor(kills0)),m=DATA.mobs?.[mid];if(!kills||!m)continue;
+      const key=dropKey(mid,m),rows=DATA.dropsByMobName?.[key]||DATA.dropsByMobName?.[m.n]||[];if(!Array.isArray(rows)||!rows.length)continue;
+      if(independent(mid,m)){
+        for(const row of rows){const id=String(row?.[0]||''),p=clamp01(Number(row?.[1]||0)/100);if(validDrop(id)&&p>0)addCount(got,id,binom(kills,p))}
+      }else{
+        let rem=kills;for(const row of rows){if(rem<=0)break;const id=String(row?.[0]||''),p=clamp01(Number(row?.[1]||0)/100);if(!validDrop(id)||p<=0)continue;const c=binom(rem,p);addCount(got,id,c);rem-=c}
+      }
+    }
+    // 地區掉落是每次擊殺、每列獨立判定。直接讀 Alpha98.78 公開測試資料，不逐殺呼叫 regionRoll。
+    try{
+      const mapId=String(state?.mapId||''),reg=window.__A9878_TEST__?.region?.(),row=reg?.rows?.find(r=>(r.mapIds||[]).includes(mapId));
+      if(row){const wt=!!(state?.player?.cls==='elf'&&Array.isArray(state?.learnedSkills)&&state.learnedSkills.includes('sk_elf_worldtree'));for(const it of (row.items||[])){let pct=Number(it.pct||0);if(wt&&['new_item_164','new_item_195','new_item_165'].includes(it.id)&&pct===20)pct=30;if(validDrop(it.id)&&pct>0)addCount(got,it.id,binom(totalKills,pct/100))}}
+    }catch(e){}
+    return got;
+  }
+  function batchGrantItems(counts){let total=0;for(const [id,n0] of Object.entries(counts||{})){const n=Math.max(0,Math.floor(Number(n0)||0));if(!n||!validDrop(id))continue;if(typeof a8Add==='function'&&a8Add(id,n)){total+=n;try{if(typeof a70RecordLoot==='function')a70RecordLoot(id,n,'offline-batch',{mob:'離線批次'})}catch(e){}}}state.session.items=Number(state.session?.items||0)+total;return total}
+  function bulkConsume(id,need){
+    need=Math.max(0,Math.floor(Number(need)||0));if(!need)return{used:0,bought:0,cost:0,short:0};let have=Number(a8Count(id)||0),bought=0,cost=0;
+    if(have<need&&state?.autoCombat?.autoRestock?.[id]&&typeof a97CanAutoSupply==='function'&&a97CanAutoSupply(id)){
+      const d=a8Item(id),b=typeof a7Bundle==='function'?a7Bundle(id):{cnt:1,cost:Math.max(1,Number(d?.p||1))},cnt=Math.max(1,Math.floor(Number(b?.cnt||1))),unit=Math.max(1,Math.floor(Number(b?.cost||d?.p||1)));
+      const want=need-have,bundles=Math.ceil(want/cnt),afford=Math.floor(Number(state.player?.gold||0)/unit),buyBundles=Math.min(bundles,afford);
+      if(buyBundles>0){bought=buyBundles*cnt;cost=buyBundles*unit;state.player.gold-=cost;a8Add(id,bought);have+=bought}
+    }
+    const used=Math.min(need,have);if(used>0)a8Take(id,used);return{used,bought,cost,short:Math.max(0,need-used)};
+  }
+  function masteryBatch(kills){
+    kills=Math.max(0,Math.floor(Number(kills)||0));if(!kills)return;
+    try{if(state?.player?.cls==='mage'&&typeof a975State==='function'&&typeof A975_CFG!=='undefined'&&typeof A22_MASTERIES!=='undefined'){const st=a975State('mdrain'),cfg=A975_CFG.mdrain,t=Number(cfg?.targets?.[st.lv]||0);if(st&&st.lv<A22_MASTERIES.mdrain.cap&&Number(st.exp||0)<t)st.exp=Math.min(t,Number(st.exp||0)+kills)}}catch(e){}
+    try{if(state?.player?.cls==='knight'&&typeof a980ActiveSlot==='function'){const a=a980ActiveSlot(),map=String(state.mapId||'');if(a==='wm1'){const st=a980WmState('wm1'),zone=a980WmZoneId('wm1'),t=Number(A979_WM1_TARGETS?.[st.lv]||0),mul=typeof a980RiseOn==='function'&&a980RiseOn('wm1')?a980RiseMultiplier('wm1'):1;if(st?.boundWeaponId&&st.lv<5&&zone&&map===zone)st.exp=Math.min(t,Number(st.exp||0)+kills*Math.max(1,Number(mul)||1))}else if(a==='wm2'){const st=a980WmState('wm2'),zone=a980WmZoneId('wm2'),t=Number(A980_WM2_TARGETS?.[st.lv]||0),mul=typeof a980RiseOn==='function'&&a980RiseOn('wm2')?a980RiseMultiplier('wm2'):1;if(st?.unlocked&&st.boundWeaponId&&st.lv<5&&zone&&map===zone)st.exp=Math.min(t,Number(st.exp||0)+kills*Math.max(1,Number(mul)||1))}}}catch(e){}
+  }
+  function unsafe(){
+    if(!state||state.dead||a7IsVillage()||a30MapKind(state.mapId)!=='hunt')return 'not-hunt';
+    if(state?.boss?.fighting||state?.boss?.active)return 'boss';
+    try{if(typeof a9Stage==='function'&&Number(a9Stage()||0)>0)return 'trial'}catch(e){}
+    if(state?.tracking&&Number(state.tracking.until||0)>Date.now())return 'tracking';
+    if(state?.sherineWorld)return 'sherine';
+    return '';
+  }
+  function canInstant(job){return mobile()&&job&&Number(job.remaining||0)>EXACT_LIMIT&&!unsafe()}
+
+  function instant(job,notify=true){
+    const wall0=performance.now(),stat={build:A9958_BUILD,engine:'instant-batch',totalMs:Number(job.totalElapsed||0),sampleMs:0,sampleKills:0,batchMs:0,batchKills:0,items:0,consumed:{},restockCost:0,safetyFraction:1,reason:'done'};
+    a45EnsureState();state.a45.offlineSettling=true;state.a45.offlineJob=job;state.running=false;
+    const before=a45OfflineSummaryBefore(),consumed={},startHp=Number(state.player?.hp||0),startMp=Number(state.player?.mp||0),maxHp=Math.max(1,Number(state.player?.maxHp||1)),maxMp=Math.max(1,Number(state.player?.maxMp||1));
+    const oldTake=a8Take;
+    a8Take=function(id,n=1){const pre=Number(a8Count(id)||0),r=oldTake.apply(this,arguments),post=Number(a8Count(id)||0),d=Math.max(0,pre-post);if(d)consumed[id]=(consumed[id]||0)+d;return r};
+    let done=0;
+    try{
+      const first=Math.min(Number(job.remaining||0),SAMPLE_FIRST);done=a45ReplayChunk(first);
+      if(!state.dead&&done+100<Number(job.remaining||0)&&Number(state.session?.kills||0)-before.kills<1&&done<SAMPLE_MAX){const more=Math.min(SAMPLE_MAX-done,Number(job.remaining||0)-done);done+=a45ReplayChunk(more)}
+    }finally{a8Take=oldTake}
+    const sample=a45OfflineDiff(before);a45MergeAccum(job.accum,sample);stat.sampleMs=done;stat.sampleKills=sample.kills;stat.consumed={...consumed};
+    if(!(done>0)||state.dead||sample.kills<=0){job.remaining=Math.max(0,Number(job.remaining||0)-done);job.processed=Number(job.processed||0)+done;stat.reason=state.dead?'dead-in-sample':'no-kills';stat.wallMs=performance.now()-wall0;K.last=stat;K.runs++;return a45FinishOffline(job,notify)}
+
+    let rem=Math.max(0,Number(job.remaining||0)-done),frac=1;
+    const endHp=Number(state.player?.hp||0),endMp=Number(state.player?.mp||0),dh=endHp-startHp,dm=endMp-startMp;
+    // 若樣本期間生命/魔力快速下降，先縮短可安全批次時數；避免「秒結算」變成免費不死。
+    if(dh<0){const perMs=(-dh)/Math.max(1,done),safe=Math.max(0,(endHp-maxHp*.10)/Math.max(1e-9,perMs));frac=Math.min(frac,clamp01(safe/Math.max(1,rem)))}
+    if(state?.autoCombat?.healSkill&&dm<0){const perMs=(-dm)/Math.max(1,done),safe=Math.max(0,(endMp-maxMp*.05)/Math.max(1e-9,perMs));frac=Math.min(frac,clamp01(safe/Math.max(1,rem)))}
+    // 消耗品不足時先依可用量估算最大可掛比例；開啟自動補貨的品項會在後面用當前/收益金幣批量補貨。
+    for(const [id,c0] of Object.entries(consumed)){const need=c0*rem/Math.max(1,done);if(need<=0)continue;if(!(state?.autoCombat?.autoRestock?.[id]))frac=Math.min(frac,clamp01(Number(a8Count(id)||0)/need))}
+    rem=Math.floor(rem*frac/100)*100;stat.safetyFraction=frac;
+    const rateKills=sample.kills/Math.max(1,done),extraKills=stochastic(rateKills*rem),expPer=sample.exp/Math.max(1,sample.kills),goldPer=sample.gold/Math.max(1,sample.kills),extraExp=stochastic(extraKills*expPer),extraGold=stochastic(extraKills*goldPer);
+
+    // 先發怪物金幣，讓「自動補貨」能像正常掛機一樣使用掛機途中取得的金幣。
+    state.player.exp=Number(state.player.exp||0)+extraExp;state.player.gold=Number(state.player.gold||0)+extraGold;state.session.kills=Number(state.session.kills||0)+extraKills;state.session.exp=Number(state.session.exp||0)+extraExp;state.session.gold=Number(state.session.gold||0)+extraGold;
+    try{a45WithQuietRuntime(()=>levelCheck())}catch(e){}
+    try{if(typeof a35EnsureState==='function'){a35EnsureState();if(state.a35)state.a35.killsSynced=Number(state.a35.killsSynced||0)+extraKills}}catch(e){}
+    masteryBatch(extraKills);
+
+    // 剩餘時數的掉落使用批次機率，不逐隻 rollDrop。
+    const drops=batchMobDrops(extraKills);stat.items=batchGrantItems(drops);
+    // 剩餘時數消耗品一次扣除；不足且允許自動補貨時一次批量購買。
+    for(const [id,c0] of Object.entries(consumed)){const need=stochastic(c0*rem/Math.max(1,done)),r=bulkConsume(id,need);stat.restockCost+=Number(r.cost||0);if(r.short>0)stat.reason='resource-short'}
+
+    // HP/MP 僅套樣本趨勢；正向恢復不外推超過上限。
+    state.player.hp=Math.max(0,Math.min(Number(state.player.maxHp||maxHp),endHp+dh*(rem/Math.max(1,done))));
+    state.player.mp=Math.max(0,Math.min(Number(state.player.maxMp||maxMp),endMp+dm*(rem/Math.max(1,done))));
+    const batch={kills:extraKills,exp:extraExp,gold:extraGold,items:Object.entries(drops).map(([id,count])=>({id,name:DATA.items?.[id]?.n||id,count}))};a45MergeAccum(job.accum,batch);
+    job.remaining=Math.max(0,Number(job.remaining||0)-done-rem);job.processed=Number(job.processed||0)+done+rem;
+    // 若安全比例小於 1，視為掛機資源/生命不足後停止，不再讓舊引擎把剩餘數小時重新逐隻補跑。
+    if(frac<.999||stat.reason==='resource-short'){job.remaining=0;state.running=false;stat.reason=stat.reason==='done'?'safety-stop':stat.reason}
+    if(state.a36?.background)state.a36.background.hiddenAt=Number(state.a36.background.hiddenAt||Date.now())+done+rem;
+    stat.batchMs=rem;stat.batchKills=extraKills;stat.wallMs=performance.now()-wall0;K.last=stat;K.runs++;
+    return a45FinishOffline(job,notify);
+  }
+
+  a45ProcessOffline=function(job,notify=true){
+    if(canInstant(job))return instant(job,notify);
+    return BASE_PROCESS(job,notify);
+  };
+
+  function applyVersion(){
+    window.__BUILD_VERSION__=A9958_BUILD;
+    try{document.title='樓梯口天堂 · '+A9958_BUILD}catch(e){}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=A9958_BUILD}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.58｜手機長時間離線秒結算實驗版｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=A9958_BUILD+' · 手機離線秒結算'}catch(e){}
+    try{if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.mobileOfflineCompute='alpha99.58-instant-single-sample-batch'}}catch(e){}
+  }
+  function audit(){const issues=[];if(A46_OFFLINE_CAP_MS!==86400000)issues.push('24h上限遺失');if(A45_OFFLINE_TICK_MS!==100)issues.push('100ms樣本tick遺失');if(typeof a47ShowOfflineReport!=='function')issues.push('離線收益列表遺失');if(typeof BASE_PROCESS!=='function')issues.push('舊離線引擎備援遺失');return{ok:!issues.length,build:A9958_BUILD,issues,mobile:mobile(),last:K.last}}
+  async function runtimeProbe(simMs=12*60*60*1000){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,oldForce=K.forceMobile,hadRaf=typeof raf!=='undefined'&&!!raf;
+    try{
+      if(hadRaf){try{cancelAnimationFrame(raf)}catch(e){};raf=0}
+      K.forceMobile=true;a76TestReset('knight',80);state.inVillage=false;state.mapId='training';state.lastHuntMap='training';state.dead=false;state.running=false;derive();state.player.maxHp=1e9;state.player.hp=1e9;state.player.maxMp=1e9;state.player.mp=1e9;state.player.exp=-1e12;spawnAll();a45EnsureState();
+      state.a36.background={...(state.a36.background||{}),active:true,wasRunning:true,mapId:state.mapId,hiddenAt:1700000000000};A45_SIM_NOW=0;A45_SIM_EPOCH=1700000000000;
+      const before={kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0)},job={reason:'a9958-probe',totalElapsed:simMs,remaining:simMs,processed:0,wanted:true,sameMap:true,accum:{kills:0,exp:0,gold:0,items:{}}},t=performance.now();
+      const r=a45ProcessOffline(job,false),wall=performance.now()-t,after={kills:Number(state.session?.kills||0),exp:Number(state.session?.exp||0),gold:Number(state.session?.gold||0),items:Number(state.session?.items||0)};
+      return{ok:!state?.a45?.offlineSettling&&wall<5000&&after.kills>before.kills,build:A9958_BUILD,simMs,wallMs:wall,before,after,last:K.last,report:state?.a45?.offlineLastReport||null,returned:r};
+    }catch(e){return{ok:false,build:A9958_BUILD,error:String(e?.stack||e)}}finally{K.forceMobile=oldForce;A45_SIM_NOW=0;A45_SIM_EPOCH=0;try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage);if(snap){state=snap;derive();render()}else state=null}catch(e){}if(hadRaf&&typeof raf!=='undefined'&&!raf){try{last=performance.now();raf=requestAnimationFrame(loop)}catch(e){}}applyVersion()}
+  }
+  async function probe(){const rows=[],add=(n,ok,d={})=>rows.push({name:n,ok:!!ok,detail:d});try{const a=audit();add('核心稽核',a.ok,a);for(const h of [2,12,24]){const r=await runtimeProbe(h*60*60*1000);add(h+'小時手機秒結算',r.ok&&r.wallMs<5000&&r.last?.engine==='instant-batch',{wallMs:r.wallMs,kills:r.after?.kills-r.before?.kills,items:r.after?.items-r.before?.items,last:r.last})}}catch(e){add('probe exception',false,{error:String(e?.stack||e)})}finally{applyVersion()}return{ok:rows.every(x=>x.ok),build:A9958_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,rows}}
+
+  async function modalProbe(simMs=12*60*60*1000){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null,oldForce=K.forceMobile,hadRaf=typeof raf!=='undefined'&&!!raf;let result={ok:false};
+    try{
+      if(hadRaf){try{cancelAnimationFrame(raf)}catch(e){};raf=0}
+      K.forceMobile=true;a76TestReset('knight',80);state.inVillage=false;state.mapId='training';state.lastHuntMap='training';state.dead=false;state.running=false;derive();state.player.maxHp=1e9;state.player.hp=1e9;state.player.maxMp=1e9;state.player.mp=1e9;state.player.exp=-1e12;spawnAll();a45EnsureState();
+      state.a36.background={...(state.a36.background||{}),active:true,wasRunning:true,mapId:state.mapId,hiddenAt:1700000000000};A45_SIM_NOW=0;A45_SIM_EPOCH=1700000000000;
+      const job={reason:'a9958-modal-probe',totalElapsed:simMs,remaining:simMs,processed:0,wanted:true,sameMap:true,accum:{kills:0,exp:0,gold:0,items:{}}},t=performance.now();
+      a45ProcessOffline(job,true);await new Promise(r=>setTimeout(r,30));const wall=performance.now()-t,m976=document.getElementById('a976-offline-modal'),m47=document.getElementById('a47-offline-modal'),m=m976||m47,txt=String(m?.textContent||'');
+      result={ok:!!m?.classList.contains('open')&&txt.includes('離線')&&txt.includes('擊殺')&&txt.includes('經驗')&&txt.includes('金幣')&&wall<5000,wallMs:wall,open:!!m?.classList.contains('open'),modal:m976?'a976':'a47',text:txt.slice(0,500),last:K.last,report:state?.a45?.offlineLastReport||null};
+      return result;
+    }catch(e){return{ok:false,error:String(e?.stack||e)}}finally{K.forceMobile=oldForce;A45_SIM_NOW=0;A45_SIM_EPOCH=0;try{document.getElementById('a47-offline-modal')?.classList.remove('open');document.getElementById('a976-offline-modal')?.classList.remove('open')}catch(e){}try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage);if(snap){state=snap;derive();render()}else state=null}catch(e){}if(hadRaf&&typeof raf!=='undefined'&&!raf){try{last=performance.now();raf=requestAnimationFrame(loop)}catch(e){}}applyVersion()}
+  }
+
+  window.__A9958_TEST__={build:A9958_BUILD,audit,probe,runtimeProbe,modalProbe,last:()=>K.last,forceMobile:v=>(K.forceMobile=v==null?null:!!v),applyVersion};
+  try{
+    if(typeof render==='function'){const b=render;render=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+    if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+    if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);applyVersion();return r}}
+  }catch(e){}
+  applyVersion();setTimeout(applyVersion,0);window.addEventListener('pageshow',applyVersion,{passive:true});
+})();
+
+
+
 
 })();
 </script>
@@ -37277,5 +37459,9 @@ const A9954_BUILD='B1.0 Alpha99.54';
     if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);apply();return r}}
   }catch(e){}
 })();
+</script>
+
+<script id="a9958-final-version">
+(()=>{const B='B1.0 Alpha99.58';function a(){window.__BUILD_VERSION__=B;try{document.title='樓梯口天堂 · '+B}catch(e){}try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.58｜手機長時間離線秒結算實驗版｜PC＋手機'}catch(e){}try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 手機離線秒結算'}catch(e){}}a();setTimeout(a,0);window.addEventListener('pageshow',a,{passive:true})})();
 </script>
 </body></html>
