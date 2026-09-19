@@ -37190,6 +37190,237 @@ const A9954_BUILD='B1.0 Alpha99.54';
 
 
 
+// =====================================================================
+// B1.0 Alpha99.60 — 自動設定獨立通道 / 技能與喝水互不阻塞
+// 基底：Alpha99.59。只重整自動戰鬥排程，不更動 UI、技能數值、藥水數值、補貨門檻、強化或潘朵拉內容。
+// =====================================================================
+const A9960_BUILD='B1.0 Alpha99.60';
+(()=>{
+  const A9960_INTERVAL=550;
+  let A9960_POTION_AT=0,A9960_SKILL_AT=0,A9960_AUX_AT=0;
+  let A9960_OPENED=new WeakSet();
+
+  function a9960ResetChannels(now=0,resetOpen=true){
+    now=Math.max(0,Number(now)||0);
+    A9960_POTION_AT=now;A9960_SKILL_AT=now;A9960_AUX_AT=now;
+    if(resetOpen)A9960_OPENED=new WeakSet();
+    try{a11AutoAt=now}catch(e){}
+    return now;
+  }
+  function a9960LegacyForceReset(){
+    // 舊流程／測試／世界王會把 a11AutoAt 清成 0；把這個訊號同步到三個新通道。
+    try{if(Number(a11AutoAt)<=0&&(A9960_POTION_AT>0||A9960_SKILL_AT>0||A9960_AUX_AT>0))a9960ResetChannels(0,false)}catch(e){}
+  }
+  function a9960Gate(id,sk){
+    if(!id||!sk)return false;
+    try{if(typeof a82SkillGate==='function')return !!a82SkillGate(id,sk,true).ok}catch(e){return false}
+    if(!state?.learnedSkills?.includes(id)||!a11ElementOk(sk)||!a11SkillReady(id))return false;
+    const req=a8ReqSkillLevel(sk);if(req!=null&&state.player.lv<req)return false;
+    return true;
+  }
+  function a9960PotionChannel(now,hpPct){
+    if(now<A9960_POTION_AT)return false;
+    A9960_POTION_AT=now+A9960_INTERVAL;
+    const a=state.autoCombat;
+    if(!a.heal||hpPct>Number(a.healPct||50))return false;
+    const pid=a11BestPotion();
+    return !!(pid&&a11AutoUseItem(pid));
+  }
+  function a9960HealSkill(hpPct){
+    const a=state.autoCombat;if(!a.healSkill||hpPct>Number(a.healSkillPct||50))return false;
+    const id=(typeof a97SelectedHealSkill==='function'?a97SelectedHealSkill():'')||(typeof a11BestHealSkill==='function'?a11BestHealSkill():'');
+    const sk=DATA.skills?.[id];
+    if(!a9960Gate(id,sk)||state.player.mp<Number(sk?.mp||0))return false;
+    if(Number(sk?.hpCost||0)>0&&state.player.hp<=Number(sk.hpCost||0))return false;
+    return !!a11Cast(id,true);
+  }
+  function a9960BuffSkill(){
+    const a=state.autoCombat,rows=window.__A9868_TEST__?.ownedRows?.('buff')||[];
+    for(const [id,sk] of rows){
+      if(!a.autoBuffSkills?.[id]||a11SkillBuffActive(id))continue;
+      if(!a9960Gate(id,sk)||state.player.mp<Number(sk.mp||0))continue;
+      if(Number(sk.hpCost||0)>0&&state.player.hp<=Number(sk.hpCost||0))continue;
+      if(a11Cast(id,true))return true;
+    }
+    return false;
+  }
+  function a9960ConvertSkill(hpPct,mpPct){
+    const a=state.autoCombat,id=a.convertSkill,sk=DATA.skills?.[id];
+    if(!id||!sk||!(hpPct>Number(a.convertHpMin||0)&&mpPct<Number(a.convertMpMax||0)))return false;
+    if(!a9960Gate(id,sk)||state.player.mp<Number(sk.mp||0))return false;
+    if(Number(sk.hpCost||0)>0&&state.player.hp<=Number(sk.hpCost||0))return false;
+    return !!a11Cast(id,true);
+  }
+  function a9960OpeningSkill(mpPct){
+    const a=state.autoCombat,id=a.openSkill,sk=DATA.skills?.[id];
+    if(!id||!sk||mpPct<=Number(a.openMpMin||0))return false;
+    const target=state.mobs?.[state.target];
+    if(!target||target.dead||A9960_OPENED.has(target)||!a9960Gate(id,sk)||state.player.mp<Number(sk.mp||0))return false;
+    if(a11Cast(id,true)){A9960_OPENED.add(target);return true}
+    return false;
+  }
+  function a9960AttackSkill(mpPct){
+    const a=state.autoCombat,id=a.attackSkill,sk=DATA.skills?.[id];
+    if(!id||!sk||mpPct<=Number(a.attackMpMin??a.mpReserve??0))return false;
+    if(!a9960Gate(id,sk)||state.player.mp<Number(sk.mp||0))return false;
+    return !!a11Cast(id,true);
+  }
+  function a9960SkillChannel(now,hpPct,mpPct){
+    if(now<A9960_SKILL_AT)return '';
+    A9960_SKILL_AT=now+A9960_INTERVAL;
+    // 技能通道同一節拍最多施放一招，避免同 tick 狂放；治療優先，其餘沿用原順序。
+    if(a9960HealSkill(hpPct))return 'heal';
+    if(a9960BuffSkill())return 'buff';
+    if(a9960ConvertSkill(hpPct,mpPct))return 'convert';
+    if(a9960OpeningSkill(mpPct))return 'open';
+    if(a9960AttackSkill(mpPct))return 'attack';
+    return '';
+  }
+  function a9960AuxChannel(now){
+    if(now<A9960_AUX_AT)return '';
+    A9960_AUX_AT=now+A9960_INTERVAL;
+    const a=state.autoCombat;
+    if(a.haste&&!a8BuffOn('haste')&&a8Count('potion_haste')>0&&a11AutoUseItem('potion_haste'))return 'haste';
+    if(a.blue&&!a8BuffOn('blue')&&a8Count('potion_blue')>0&&a11AutoUseItem('potion_blue'))return 'blue';
+    if(a97AutoSimpleBuff('potion_brave','brave','brave'))return 'brave';
+    if(a97AutoSimpleBuff('new_item_139','cookie','elfcookie'))return 'cookie';
+    if(a97AutoSimpleBuff('new_item_140','cautious','cautious'))return 'cautious';
+    if(a97AutoPoly())return 'poly';
+    return '';
+  }
+
+  // 一個主循環、四個邏輯通道：補貨(原1s)、治癒藥水(550ms)、技能(550ms)、輔助道具(550ms)。
+  // 喝水、技能、輔助道具互不 return 阻塞；同一輪產生的存檔/UI 更新合併到最後執行。
+  const A9960_OLD_AUTO=a11Auto;
+  a11Auto=function(now){
+    if(!state?.running||a7IsVillage())return;
+    now=Math.max(0,Number(now)||0);a9960LegacyForceReset();a97EnsureState();
+    const hpPct=100*state.player.hp/Math.max(1,state.player.maxHp),mpPct=100*state.player.mp/Math.max(1,state.player.maxMp);
+    const oldSave=save,oldHud=renderHUDDynamic,oldDraw=renderDrawers;
+    let wantSave=false,wantHud=false,wantDraw=false;
+    try{
+      save=function(){wantSave=true;return true};
+      renderHUDDynamic=function(){wantHud=true};
+      renderDrawers=function(){wantDraw=true};
+      a97RestockSweep(now);
+      // 百分比用本輪起始快照，避免先喝水後把治療魔法條件吃掉。
+      a9960PotionChannel(now,hpPct);
+      a9960SkillChannel(now,hpPct,mpPct);
+      a9960AuxChannel(now);
+    }finally{
+      save=oldSave;renderHUDDynamic=oldHud;renderDrawers=oldDraw;
+      try{a11AutoAt=A9960_SKILL_AT}catch(e){}
+      if(wantSave)try{oldSave()}catch(e){}
+      if(wantHud)try{oldHud()}catch(e){}
+      if(wantDraw&&drawer==='skills')try{oldDraw()}catch(e){}
+    }
+  };
+
+  // 離線 100ms replay、99.58 長時間離線取樣及回前景，都經過這個 reset。
+  const a9960ResetBase=a77ResetPerfSchedulers;
+  a77ResetPerfSchedulers=function(now=0){const r=a9960ResetBase.apply(this,arguments);a9960ResetChannels(Number(now)||0,true);return r};
+
+  // 世界王開始時不承接上一場／一般獵場剩餘節拍，且重置開怪目標記錄。
+  const a9960BossStartBase=a43StartBoss;
+  a43StartBoss=function(){a9960ResetChannels(0,true);return a9960BossStartBase.apply(this,arguments)};
+
+  function a9960Prepare(cls='mage',lv=80){
+    a76TestReset(cls,lv);state.inVillage=false;state.mapId='training';state.dead=false;state.running=true;ensureMobs();state.target=0;
+    a97EnsureState();
+    state.autoCombat.heal=false;state.autoCombat.healSkill=false;state.autoCombat.haste=false;state.autoCombat.blue=false;state.autoCombat.brave=false;state.autoCombat.cookie=false;state.autoCombat.cautious=false;state.autoCombat.poly=false;
+    state.autoCombat.attackSkill='';state.autoCombat.openSkill='';state.autoCombat.convertSkill='';state.autoCombat.autoBuffSkills={};
+    for(const k of Object.keys(state.autoCombat.autoRestock||{}))state.autoCombat.autoRestock[k]=false;
+    a9960ResetChannels(0,true);try{A97_RESTOCK_AT=0}catch(e){}
+  }
+  function a9960Probe(){
+    const storage=typeof a76StorageSnapshot==='function'?a76StorageSnapshot():null,snap=state?JSON.parse(JSON.stringify(state)):null;
+    const active=typeof a46ActiveSlot!=='undefined'?a46ActiveSlot:0,pending=typeof a46PendingSlot!=='undefined'?a46PendingSlot:0,rows=[];
+    const add=(name,ok,detail={})=>rows.push({name,ok:!!ok,detail});
+    try{
+      // 1) 喝水 + 循環攻擊技能。
+      a9960Prepare('mage',80);state.learnedSkills=['sk_firearrow'];state.inventory={potion_ult:5};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.autoCombat.attackSkill='sk_firearrow';state.autoCombat.attackMpMin=0;state.player.hp=Math.max(1,state.player.maxHp-300);state.player.mp=state.player.maxMp;
+      const p0=a8Count('potion_ult'),m0=state.player.mp,t0=state.mobs[0]?.hp;a11Auto(1000);
+      add('同一輪喝水＋攻擊技能',a8Count('potion_ult')===p0-1&&state.player.mp<m0&&Number(state.mobs[0]?.hp)<Number(t0),{potions:p0+'→'+a8Count('potion_ult'),mp:m0+'→'+state.player.mp,targetHp:t0+'→'+state.mobs[0]?.hp});
+
+      // 2) 喝水 + 治療魔法。
+      a9960Prepare('mage',80);state.learnedSkills=['sk_heal1'];state.inventory={potion_ult:5};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.autoCombat.healSkill=true;state.autoCombat.healSkillId='sk_heal1';state.autoCombat.healSkillPct=90;state.player.hp=Math.max(1,state.player.maxHp-400);state.player.mp=state.player.maxMp;
+      const hp0=state.player.hp,pp0=a8Count('potion_ult'),mm0=state.player.mp;a11Auto(2000);
+      add('同一輪喝水＋治療魔法',a8Count('potion_ult')===pp0-1&&state.player.mp<mm0&&state.player.hp>hp0+120,{heal:state.player.hp-hp0,potions:pp0+'→'+a8Count('potion_ult'),mp:mm0+'→'+state.player.mp});
+
+      // 3) 喝水 + 技能 Buff。
+      a9960Prepare('mage',80);state.learnedSkills=['sk_shield'];state.inventory={potion_ult:5};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.autoCombat.autoBuffSkills={sk_shield:true};state.player.hp=Math.max(1,state.player.maxHp-300);state.player.mp=state.player.maxMp;
+      const bp0=a8Count('potion_ult');a11Auto(3000);
+      add('同一輪喝水＋Buff技能',a8Count('potion_ult')===bp0-1&&a11SkillBuffActive('sk_shield'),{potions:bp0+'→'+a8Count('potion_ult'),buff:a11SkillBuffActive('sk_shield')});
+
+      // 4) 喝水 + 轉換魔法。
+      a9960Prepare('elf',80);state.learnedSkills=['sk_elf_mind'];state.inventory={potion_ult:5};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.autoCombat.convertSkill='sk_elf_mind';state.autoCombat.convertHpMin=10;state.autoCombat.convertMpMax=90;state.player.hp=Math.max(20,state.player.maxHp*.5);state.player.mp=Math.max(0,Math.floor(state.player.maxMp*.2));
+      const cp0=a8Count('potion_ult'),ch0=state.player.hp,cm0=state.player.mp;a11Auto(4000);
+      add('同一輪喝水＋轉換魔法',a8Count('potion_ult')===cp0-1&&state.player.hp!==ch0+120&&state.player.mp>cm0,{potions:cp0+'→'+a8Count('potion_ult'),hp:ch0+'→'+state.player.hp,mp:cm0+'→'+state.player.mp});
+
+      // 5) 喝水 + 開怪技能。
+      a9960Prepare('mage',80);state.learnedSkills=['sk_firearrow'];state.inventory={potion_ult:5};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.autoCombat.openSkill='sk_firearrow';state.autoCombat.openMpMin=0;state.player.hp=Math.max(1,state.player.maxHp-300);state.player.mp=state.player.maxMp;
+      const op0=a8Count('potion_ult'),om0=state.player.mp,oh0=state.mobs[0]?.hp;a11Auto(5000);
+      add('同一輪喝水＋開怪技能',a8Count('potion_ult')===op0-1&&state.player.mp<om0&&Number(state.mobs[0]?.hp)<Number(oh0),{potions:op0+'→'+a8Count('potion_ult'),mp:om0+'→'+state.player.mp});
+
+      // 6) 喝水 + 輔助道具。
+      a9960Prepare('knight',80);state.inventory={potion_ult:5,potion_brave:1};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.autoCombat.brave=true;state.player.hp=Math.max(1,state.player.maxHp-300);
+      const ap0=a8Count('potion_ult');a11Auto(6000);
+      add('喝水＋輔助道具互不阻塞',a8Count('potion_ult')===ap0-1&&a8BuffOn('brave')&&a8Count('potion_brave')===0,{potions:ap0+'→'+a8Count('potion_ult'),brave:a8BuffOn('brave')});
+
+      // 7) 550ms cadence。
+      a9960Prepare('knight',80);state.inventory={potion_ult:5};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.player.maxHp=10000;state.player.hp=100;
+      a11Auto(7000);const c1=a8Count('potion_ult');a11Auto(7100);const c2=a8Count('potion_ult');a11Auto(7550);const c3=a8Count('potion_ult');
+      add('治癒藥水獨立550ms節拍',c2===c1&&c3===c1-1,{afterFirst:c1,after100ms:c2,after550ms:c3});
+
+      // 8) 精確離線 100ms replay。
+      a9960Prepare('mage',80);state.learnedSkills=['sk_firearrow'];state.inventory={potion_ult:20};state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.autoCombat.attackSkill='sk_firearrow';state.autoCombat.attackMpMin=0;state.player.maxHp=10000;state.player.hp=100;state.player.maxMp=Math.max(1000,state.player.maxMp);state.player.mp=state.player.maxMp;ensureMobs();for(const x of state.mobs||[])if(x)x.nextAtk=1e12;
+      const rp0=a8Count('potion_ult'),rm0=state.player.mp;const done=a45ReplayChunk(600);
+      add('離線100ms replay技能＋喝水同規則',done===600&&a8Count('potion_ult')<rp0&&state.player.mp<rm0,{done,potions:rp0+'→'+a8Count('potion_ult'),mp:rm0+'→'+state.player.mp});
+      try{A45_SIM_NOW=0;A45_SIM_EPOCH=0}catch(e){}
+
+      // 9) 世界王代理。
+      if(window.__A9936_TEST__?.prepareBoss&&window.__A9936_TEST__?.bossAuto){
+        window.__A9936_TEST__.prepareBoss('mage',80);state.learnedSkills=['sk_firearrow'];state.inventory.potion_ult=5;state.autoCombat.heal=true;state.autoCombat.healPotion='potion_ult';state.autoCombat.healPct=90;state.autoCombat.attackSkill='sk_firearrow';state.autoCombat.attackMpMin=0;state.player.hp=Math.max(1,state.player.maxHp-300);state.player.mp=state.player.maxMp;a9960ResetChannels(0,true);
+        const wp0=a8Count('potion_ult'),wm0=state.player.mp,wb0=state.boss.hp;const wr=window.__A9936_TEST__.bossAuto(9000);
+        add('世界王同一輪喝水＋攻擊技能',a8Count('potion_ult')===wp0-1&&state.player.mp<wm0&&state.boss.hp<wb0,{potions:wp0+'→'+a8Count('potion_ult'),mp:wm0+'→'+state.player.mp,boss:wb0+'→'+state.boss.hp,damage:wr?.damage});
+      }else add('世界王同一輪喝水＋攻擊技能',false,{error:'Alpha99.36 test API missing'});
+
+      // 10) UI/state 保留。
+      const h=window.__A9868_TEST__?.settingsHtml?.()||'';
+      add('原自動設定UI與欄位保留',h.includes('自動喝治癒藥水')&&h.includes('開怪技能')&&h.includes('攻擊技能')&&h.includes('治療魔法')&&h.includes('轉換魔法')&&h.includes('輔助道具'),{htmlLength:h.length});
+
+      // 11) 99.59 一鍵 +9 核心仍在，不依賴版本字樣。
+      const e=window.__A9931_TEST__?.probeTo9?.();
+      add('Alpha99.59一鍵強化核心回歸',e?.ok===true,{passed:e?.passed,total:e?.total});
+
+      // 12) 99.58 長時間離線秒結算核心保留。
+      const o=window.__A9958_TEST__?.audit?.();
+      add('Alpha99.58手機離線秒結算核心保留',o?.ok===true,{issues:o?.issues||[],build:o?.build});
+    }catch(e){add('Alpha99.60 probe例外',false,{error:String(e?.stack||e)})}
+    finally{
+      try{if(storage&&typeof a76StorageRestore==='function')a76StorageRestore(storage)}catch(e){}
+      try{if(typeof a46ActiveSlot!=='undefined')a46ActiveSlot=active;if(typeof a46PendingSlot!=='undefined')a46PendingSlot=pending}catch(e){}
+      try{if(snap){state=snap;derive();render()}else{state=null;try{a46ShowLogin()}catch(e){}}}catch(e){}
+      try{A45_SIM_NOW=0;A45_SIM_EPOCH=0}catch(e){};a9960ResetChannels(0,true);
+    }
+    return{ok:rows.every(x=>x.ok),build:A9960_BUILD,total:rows.length,passed:rows.filter(x=>x.ok).length,failed:rows.filter(x=>!x.ok).length,rows,channels:{potionMs:A9960_INTERVAL,skillMs:A9960_INTERVAL,auxMs:A9960_INTERVAL,restockMs:1000}};
+  }
+  function a9960Audit(){
+    const issues=[];
+    if(typeof a11Auto!=='function')issues.push('a11Auto missing');
+    if(typeof a77ResetPerfSchedulers!=='function')issues.push('offline clock reset missing');
+    if(typeof a97RestockSweep!=='function')issues.push('restock sweep missing');
+    if(typeof window.__A9868_TEST__?.settingsHtml!=='function')issues.push('common auto settings UI missing');
+    if(typeof window.__A9958_TEST__?.audit!=='function')issues.push('Alpha99.58 offline core missing');
+    if(typeof window.__A9931_TEST__?.probeTo9!=='function')issues.push('Alpha99.59 enhance core missing');
+    return{ok:issues.length===0,build:A9960_BUILD,issues,intervalMs:A9960_INTERVAL,design:'one main loop + independent potion/skill/aux channels + existing restock sweep',base:'Alpha99.59'};
+  }
+
+  const a9960InitBase=init;init=function(){const r=a9960InitBase.apply(this,arguments);try{a9960ResetChannels(performance.now(),true);if(state){state.saveMeta=state.saveMeta||{};state.saveMeta.autoChannelRevision='alpha99.60'}}catch(e){console.error('Alpha99.60 init',e)}return r};
+  window.__A9960_TEST__={build:A9960_BUILD,audit:a9960Audit,probe:a9960Probe,reset:a9960ResetChannels,oldAuto:A9960_OLD_AUTO,intervalMs:A9960_INTERVAL};
+})();
+
+
 
 })();
 </script>
@@ -37543,6 +37774,27 @@ const A9954_BUILD='B1.0 Alpha99.54';
     if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);apply();return r}}
   }catch(e){}
   window.__A9959_TEST__={build:B,audit,applyVersion:apply,previous:window.__A9958_TEST__||null};
+})();
+</script>
+
+<script id="a9960-final-version">
+(()=>{
+  const B='B1.0 Alpha99.60';
+  function apply(){
+    window.__BUILD_VERSION__=B;
+    try{document.title='樓梯口天堂 · '+B}catch(e){}
+    try{const v=document.querySelector('#a46-login-screen .a46-version');if(v)v.textContent=B}catch(e){}
+    try{const note=document.querySelector('#a46-login-screen .a46-login-note');if(note)note.textContent='Alpha99.60：自動喝水、技能、輔助道具與補貨改為獨立邏輯通道；技能不再卡藥水，喝水也不再卡技能。'}catch(e){}
+    try{const sub=document.querySelector('#create-screen .create-sub');if(sub)sub.textContent='全面重製核心 Alpha99.60｜自動設定獨立通道｜PC＋手機'}catch(e){}
+    try{const badge=document.querySelector('.source-badge');if(badge)badge.textContent=B+' · 自動設定獨立通道'}catch(e){}
+  }
+  apply();setTimeout(apply,0);window.addEventListener('pageshow',apply,{passive:true});
+  try{
+    if(typeof render==='function'){const b=render;render=function(){const r=b.apply(this,arguments);apply();return r}}
+    if(typeof a46ShowLogin==='function'){const b=a46ShowLogin;a46ShowLogin=function(){const r=b.apply(this,arguments);apply();return r}}
+    if(typeof a46ShowSlots==='function'){const b=a46ShowSlots;a46ShowSlots=function(){const r=b.apply(this,arguments);apply();return r}}
+  }catch(e){}
+  window.__A9960_VERSION__={build:B,applyVersion:apply};
 })();
 </script>
 </body></html>
